@@ -18,6 +18,9 @@
 #include <linux/kernel.h>
 #include <linux/init.h>
 #include <linux/of_platform.h>
+#include <linux/of_fdt.h>
+#include <linux/of.h>
+#include <linux/of_address.h>
 #include <linux/irqchip.h>
 #include <asm/mach/arch.h>
 #include <asm/mach/map.h>
@@ -40,7 +43,25 @@ static const char * const rockchip_board_dt_compat[] = {
 	NULL,
 };
 
+extern struct ion_platform_data ion_pdata;
+extern void __init ion_reserve(struct ion_platform_data *data);
+extern int __init rockchip_ion_find_heap(unsigned long node,
+				const char *uname, int depth, void *data);
+void __init rockchip_ion_reserve(void)
+{
+#ifdef CONFIG_ION_ROCKCHIP
+	printk("%s\n", __func__);
+	of_scan_flat_dt(rockchip_ion_find_heap, (void*)&ion_pdata);
+	ion_reserve(&ion_pdata);
+#endif
+}
+static void __init rk3288_reserve(void)
+{
+	/* reserve memory for ION */
+	rockchip_ion_reserve();
+}
 DT_MACHINE_START(ROCKCHIP_DT, "Rockchip Cortex-A9 (Device Tree)")
 	.init_machine	= rockchip_dt_init,
 	.dt_compat	= rockchip_board_dt_compat,
+	.reserve	= rk3288_reserve,
 MACHINE_END

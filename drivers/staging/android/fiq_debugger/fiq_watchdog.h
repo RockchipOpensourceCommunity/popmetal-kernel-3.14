@@ -1,8 +1,5 @@
 /*
-
- * drivers/gpu/ion/compat_ion.h
- *
- * Copyright (C) 2013 Google, Inc.
+ * Copyright (C) 2014 Google, Inc.
  *
  * This software is licensed under the terms of the GNU General Public
  * License version 2, as published by the Free Software Foundation, and
@@ -15,16 +12,9 @@
  *
  */
 
-#ifndef _LINUX_COMPAT_ION_H
-#define _LINUX_COMPAT_ION_H
+#ifndef _FIQ_WATCHDOG_H_
+#define _FIQ_WATCHDOG_H_
 
-#if IS_ENABLED(CONFIG_COMPAT)
+void fiq_watchdog_triggered(const struct pt_regs *regs, void *svc_sp);
 
-long compat_ion_ioctl(struct file *filp, unsigned int cmd, unsigned long arg);
-
-#else
-
-#define compat_ion_ioctl  NULL
-
-#endif /* CONFIG_COMPAT */
-#endif /* _LINUX_COMPAT_ION_H */
+#endif

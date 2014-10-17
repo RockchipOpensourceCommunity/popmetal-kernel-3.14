@@ -1,5 +1,5 @@
 /*
- * drivers/staging/android/ion/ion_heap.c
+ * drivers/gpu/ion/ion_heap.c
  *
  * Copyright (C) 2011 Google, Inc.
  *
@@ -178,7 +178,8 @@ size_t ion_heap_freelist_size(struct ion_heap *heap)
 	return size;
 }
 
-size_t ion_heap_freelist_drain(struct ion_heap *heap, size_t size)
+static size_t _ion_heap_freelist_drain(struct ion_heap *heap, size_t size,
+				bool skip_pools)
 {
 	struct ion_buffer *buffer;
 	size_t total_drained = 0;
@@ -197,6 +198,8 @@ size_t ion_heap_freelist_drain(struct ion_heap *heap, size_t size)
 					  list);
 		list_del(&buffer->list);
 		heap->free_list_size -= buffer->size;
+		if (skip_pools)
+			buffer->private_flags |= ION_PRIV_FLAG_SHRINKER_FREE;
 		total_drained += buffer->size;
 		spin_unlock(&heap->free_lock);
 		ion_buffer_destroy(buffer);
@@ -205,6 +208,16 @@ size_t ion_heap_freelist_drain(struct ion_heap *heap, size_t size)
 	spin_unlock(&heap->free_lock);
 
 	return total_drained;
+}
+
+size_t ion_heap_freelist_drain(struct ion_heap *heap, size_t size)
+{
+	return _ion_heap_freelist_drain(heap, size, false);
+}
+
+size_t ion_heap_freelist_shrink(struct ion_heap *heap, size_t size)
+{
+	return _ion_heap_freelist_drain(heap, size, true);
 }
 
 static int ion_heap_deferred_free(void *data)
@@ -243,13 +256,51 @@ int ion_heap_init_deferred_free(struct ion_heap *heap)
 	init_waitqueue_head(&heap->waitqueue);
 	heap->task = kthread_run(ion_heap_deferred_free, heap,
 				 "%s", heap->name);
+	sched_setscheduler(heap->task, SCHED_IDLE, &param);
 	if (IS_ERR(heap->task)) {
 		pr_err("%s: creating thread for deferred free failed\n",
 		       __func__);
 		return PTR_RET(heap->task);
 	}
-	sched_setscheduler(heap->task, SCHED_IDLE, &param);
 	return 0;
+}
+
+static int ion_heap_shrink(struct shrinker *shrinker, struct shrink_control *sc)
+{
+	struct ion_heap *heap = container_of(shrinker, struct ion_heap,
+					     shrinker);
+	int total = 0;
+	int freed = 0;
+	int to_scan = sc->nr_to_scan;
+
+	if (to_scan == 0)
+		goto out;
+
+	/*
+	 * shrink the free list first, no point in zeroing the memory if we're
+	 * just going to reclaim it. Also, skip any possible page pooling.
+	 */
+	if (heap->flags & ION_HEAP_FLAG_DEFER_FREE)
+		freed = ion_heap_freelist_shrink(heap, to_scan * PAGE_SIZE) /
+				PAGE_SIZE;
+
+	to_scan -= freed;
+	if (to_scan < 0)
+		to_scan = 0;
+
+out:
+	total = ion_heap_freelist_size(heap) / PAGE_SIZE;
+	if (heap->ops->shrink)
+		total += heap->ops->shrink(heap, sc->gfp_mask, to_scan);
+	return total;
+}
+
+void ion_heap_init_shrinker(struct ion_heap *heap)
+{
+	heap->shrinker.shrink = ion_heap_shrink;
+	heap->shrinker.seeks = DEFAULT_SEEKS;
+	heap->shrinker.batch = 0;
+	register_shrinker(&heap->shrinker);
 }
 
 struct ion_heap *ion_heap_create(struct ion_platform_heap *heap_data)
