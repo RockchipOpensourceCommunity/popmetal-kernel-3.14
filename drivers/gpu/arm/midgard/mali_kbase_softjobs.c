@@ -20,7 +20,7 @@
 #include <mali_kbase.h>
 
 #ifdef CONFIG_SYNC
-#include <linux/sync.h>
+#include "sync.h"
 #include <linux/syscalls.h>
 #include "mali_kbase_sync.h"
 #endif
@@ -39,7 +39,7 @@
 static int kbase_dump_cpu_gpu_time(kbase_jd_atom *katom)
 {
 	kbase_va_region *reg;
-	phys_addr_t addr;
+	phys_addr_t addr = 0;
 	u64 pfn;
 	u32 offset;
 	char *page;
@@ -111,19 +111,14 @@ static int kbase_dump_cpu_gpu_time(kbase_jd_atom *katom)
 		return 0;
 	}
 
+	kbase_gpu_vm_lock(kctx);
 	reg = kbase_region_tracker_find_region_enclosing_address(kctx, jc);
-	if (!reg)
-		return 0;
+	if (reg &&
+	    (reg->flags & KBASE_REG_GPU_WR) &&
+	    reg->alloc && reg->alloc->pages)
+		addr = reg->alloc->pages[pfn - reg->start_pfn];
 
-	if (!(reg->flags & KBASE_REG_GPU_WR)) {
-		/* Region is not writable by GPU so we won't write to it either */
-		return 0;
-	}
-
-	if (!reg->alloc->pages)
-		return 0;
-
-	addr = reg->alloc->pages[pfn - reg->start_pfn];
+	kbase_gpu_vm_unlock(kctx);
 	if (!addr)
 		return 0;
 
@@ -256,19 +251,37 @@ static int kbase_fence_wait(kbase_jd_atom *katom)
 
 static void kbase_fence_cancel_wait(kbase_jd_atom *katom)
 {
+	if(!katom)
+	{
+		pr_err("katom null.forbiden return\n");
+		return;
+	}
+	if(!katom->fence)
+	{
+		pr_info("katom->fence null.may release out of order.so continue unfinished step\n");
+		/*
+		if return here,may result in  infinite loop?
+		we need to delete dep_item[0] from kctx->waiting_soft_jobs?
+		jd_done_nolock function move the dep_item[0] to complete job list and then delete?
+		*/
+		goto finish_softjob;
+	}
 	if (sync_fence_cancel_async(katom->fence, &katom->sync_waiter) != 0)
 	{
 		/* The wait wasn't cancelled - leave the cleanup for kbase_fence_wait_callback */
 		return;
 	}
-
+	
 	/* Wait was cancelled - zap the atoms */
+finish_softjob:
 	katom->event_code = BASE_JD_EVENT_JOB_CANCELLED;
 
 	kbase_finish_soft_job(katom);
 
 	if (jd_done_nolock(katom))
 		kbasep_js_try_schedule_head_ctx(katom->kctx->kbdev);
+	return;
+
 }
 #endif /* CONFIG_SYNC */
 
@@ -389,8 +402,10 @@ void kbase_finish_soft_job(kbase_jd_atom *katom)
 		break;
 	case BASE_JD_REQ_SOFT_FENCE_WAIT:
 		/* Release the reference to the fence object */
-		sync_fence_put(katom->fence);
-		katom->fence = NULL;
+		if(katom->fence){
+			sync_fence_put(katom->fence);
+			katom->fence = NULL;
+		}
 		break;
 #endif				/* CONFIG_SYNC */
 	}

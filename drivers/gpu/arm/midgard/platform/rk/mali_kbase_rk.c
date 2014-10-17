@@ -288,7 +288,7 @@ static mali_bool kbase_rk_platform_init(struct kbase_device *kbdev)
 		return MALI_FALSE;
 	}
 
-	ret = clk_set_rate(kbase_rk->clk, kbase_rk->fv_table[0].freq);
+	ret = clk_set_rate(kbase_rk->clk, kbase_rk->fv_table[kbase_rk->fv_table_length -1].freq);
 	if (ret)
 		return MALI_FALSE;
 

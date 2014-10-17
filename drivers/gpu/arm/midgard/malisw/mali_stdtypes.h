@@ -81,13 +81,27 @@ typedef u8         mali_bool8;
 #define MALI_TRUE  TRUE
 /* @} */
 
+#if 0
 /**
  * @name Integer bounding values
  * Maximum and minimum values for integer types
  * @{
  */
-/* @} */
+#define U64_MAX	 UINT64_MAX
+#define U32_MAX	 UINT32_MAX
+#define U16_MAX	 UINT16_MAX
+#define U8_MAX	 UINT8_MAX
 
+#define S64_MAX  INT64_MAX
+#define S64_MIN  INT64_MIN
+#define S32_MAX  INT32_MAX
+#define S32_MIN  INT32_MIN
+#define S16_MAX  INT16_MAX
+#define S16_MIN  INT16_MIN
+#define S8_MAX   INT8_MAX
+#define S8_MIN   INT8_MIN
+/* @} */
+#endif
 /**
  * @name GPU address types
  * Types for integers which hold a GPU pointer or GPU pointer offsets.
