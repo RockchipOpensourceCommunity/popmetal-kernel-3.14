@@ -15,6 +15,7 @@
 #include <dt-bindings/interrupt-controller/arm-gic.h>
 #include <dt-bindings/pinctrl/rockchip.h>
 #include <dt-bindings/clock/rk3288-cru.h>
+#include <dt-bindings/rkfb/rk_fb.h>
 #include "skeleton.dtsi"
 
 / {
@@ -139,6 +140,11 @@
 		clock-frequency = <24000000>;
 		clock-output-names = "xin24m";
 		#clock-cells = <0>;
+	};
+
+	rockchip_timer@ff810000 {
+		compatible = "rockchip,timer";
+		reg = <0xff810000 0x20>;
 	};
 
 	timer {
@@ -529,6 +535,7 @@
 		status = "disabled";
 	};
 
+<<<<<<< HEAD
 	i2s: i2s@ff890000 {
 		compatible = "rockchip,rk3288-i2s", "rockchip,rk3066-i2s";
 		reg = <0xff890000 0x10000>;
@@ -629,6 +636,172 @@
 	};
 
 	gpu: gpu@ffa30000 {
+=======
+	ion {
+		compatible = "rockchip,ion";
+		#address-cells = <1>;
+		#size-cells = <0>;
+
+		ion_cma: rockchip,ion-heap@1 { /* CMA HEAP */
+			compatible = "rockchip,ion-heap";
+			rockchip,ion_heap = <1>;
+			reg = <0x00000000 0x20000000>; /* 512MB */
+		};
+		rockchip,ion-heap@3 { /* VMALLOC HEAP */
+			compatible = "rockchip,ion-heap";
+			rockchip,ion_heap = <3>;
+		};
+	};
+	
+	edp: edp@ff970000 {
+		compatible = "rockchip,rk32-edp";
+		interrupts = <GIC_SPI 98 IRQ_TYPE_LEVEL_HIGH>;
+		reg = <0xff970000 0x4000>;
+		clocks = <&cru SCLK_EDP>, <&cru SCLK_EDP_24M>, <&cru PCLK_EDP_CTRL>;
+		rockchip,grf = <&grf>;
+		clock-names = "clk_edp", "clk_edp_24m", "pclk_edp";
+		resets = <&cru 111>;
+		reset-names = "edp";
+	};
+
+	lvds: lvds@ff96c000 {
+		compatible = "rockchip,rk32-lvds";
+		reg = <0xff96c000 0x4000>;
+		rockchip,grf = <&grf>;
+		clocks = <&cru PCLK_LVDS_PHY>;
+		clock-names = "pclk_lvds";
+	};
+
+	lcdc0: lcdc@ff930000 {
+		compatible = "rockchip,rk3288-lcdc";
+		rockchip,prop = <EXTEND>;
+		rockchip,pwr18 = <0>;
+		rockchip,iommu-enabled = <0>;
+		rockchip,grf = <&grf>;
+		reg = <0xff930000 0x10000>;
+		interrupts = <GIC_SPI 15 IRQ_TYPE_LEVEL_HIGH>;
+		clocks = <&cru ACLK_VOP0>, <&cru DCLK_VOP0>, <&cru HCLK_VOP0>;
+		clock-names = "aclk_lcdc", "dclk_lcdc", "hclk_lcdc";
+		status = "disabled";
+	};
+
+	lcdc1: lcdc@ff940000 {
+		compatible = "rockchip,rk3288-lcdc";
+		rockchip,prop = <PRMRY>;
+		rockchip,pwr18 = <0>;
+		rockchip,iommu-enabled = <0>;
+		rockchip,grf = <&grf>;
+		reg = <0xff940000 0x10000>;
+		interrupts = <GIC_SPI 16 IRQ_TYPE_LEVEL_HIGH>;
+		clocks = <&cru ACLK_VOP1>, <&cru DCLK_VOP1>, <&cru HCLK_VOP1>;
+		clock-names = "aclk_lcdc", "dclk_lcdc", "hclk_lcdc";
+		status = "disabled";
+	};
+
+	hdmi: hdmi@ff980000 {
+		compatible = "rockchip,rk3288-hdmi";
+		reg = <0xff980000 0x20000>;
+		interrupts = <GIC_SPI 103 IRQ_TYPE_LEVEL_HIGH>;
+		rockchip,grf = <&grf>;
+		clocks = <&cru  PCLK_HDMI_CTRL>, <&cru SCLK_HDMI_HDCP>;
+		clock-names = "pclk_hdmi", "hdcp_clk_hdmi";
+		status = "disabled";
+	};
+
+	fb0: fb{
+	    	compatible = "rockchip,rk-fb";
+	    	rockchip,disp-mode = <DUAL>;
+	};
+
+	rk_screen0: rk_screen{
+		compatible = "rockchip,screen";
+		status = "okay";
+
+		disp_timings: display-timings {
+                        native-mode = <&timing0>;
+                        timing0: timing0 {
+				screen-type = <SCREEN_RGB>;
+				out-face    = <OUT_P888>;
+				clock-frequency = <74250000>;
+				hactive = <1280>;
+				vactive = <720>;
+				hback-porch = <220>;
+				hfront-porch = <110>;
+				vback-porch = <20>;
+				vfront-porch = <5>;
+				hsync-len = <40>;
+				vsync-len = <5>;
+				hsync-active = <1>;
+				vsync-active = <1>;
+				de-active = <0>;
+				pixelclk-active = <1>;
+				swap-rb = <0>;
+				swap-rg = <0>;
+				swap-gb = <0>;
+                     	};
+               };
+	};
+
+	iep_mmu {
+		dbgname = "iep";
+		compatible = "rockchip,iep_mmu";
+		reg = <0xff900800 0x100>;
+		interrupts = <GIC_SPI 17 IRQ_TYPE_LEVEL_HIGH>;
+		interrupt-names = "iep_mmu";
+	};
+
+	vip_mmu {
+		dbgname = "vip";
+		compatible = "rockchip,vip_mmu";
+		reg = <0xff950800 0x100>;
+		interrupts = <GIC_SPI 13 IRQ_TYPE_LEVEL_HIGH>;
+		interrupt-names = "vip_mmu";
+	};
+
+	vopb_mmu {
+		dbgname = "vopb";
+		compatible = "rockchip,vopb_mmu";
+		reg = <0xff930300 0x100>;
+		interrupts = <GIC_SPI 15 IRQ_TYPE_LEVEL_HIGH>;
+		interrupt-names = "vopb_mmu";
+	};
+
+	vopl_mmu {
+		dbgname = "vopl";
+		compatible = "rockchip,vopl_mmu";
+		reg = <0xff940300 0x100>;
+		interrupts = <GIC_SPI 16 IRQ_TYPE_LEVEL_HIGH>;
+		interrupt-names = "vopl_mmu";
+	};
+
+	hevc_mmu {
+		dbgname = "hevc";
+		compatible = "rockchip,hevc_mmu";
+		reg = <0xff9c0440 0x40>,
+		      <0xff9c0480 0x40>;
+		interrupts = <GIC_SPI 111 IRQ_TYPE_LEVEL_HIGH>;
+		interrupt-names = "hevc_mmu";
+	};
+
+	vpu_mmu {
+		dbgname = "vpu";
+		compatible = "rockchip,vpu_mmu";
+		reg = <0xff9a0800 0x100>;
+		interrupts = <GIC_SPI 11 IRQ_TYPE_LEVEL_HIGH>;
+		interrupt-names = "vpu_mmu";
+	};
+
+	isp_mmu {
+		dbgname = "isp_mmu";
+		compatible = "rockchip,isp_mmu";
+		reg = <0xff914000 0x100>,
+		      <0xff915000 0x100>;
+		interrupts = <GIC_SPI 14 IRQ_TYPE_LEVEL_HIGH>;
+		interrupt-names = "isp_mmu";
+	};
+
+	gpu: gpu@0xffa30000 {
+>>>>>>> dd0fb55... rockchip: rk3288 add px2 rockboard dts
 		compatible = "arm,malit764",
 			     "arm,malit76x",
 			     "arm,malit7xx",
