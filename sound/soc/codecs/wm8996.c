@@ -412,7 +412,7 @@ static int wm8996_get_retune_mobile_block(const char *name)
 static int wm8996_put_retune_mobile_enum(struct snd_kcontrol *kcontrol,
 					 struct snd_ctl_elem_value *ucontrol)
 {
-	struct snd_soc_codec *codec = snd_kcontrol_chip(kcontrol);
+	struct snd_soc_codec *codec = snd_soc_kcontrol_codec(kcontrol);
 	struct wm8996_priv *wm8996 = snd_soc_codec_get_drvdata(codec);
 	struct wm8996_pdata *pdata = &wm8996->pdata;
 	int block = wm8996_get_retune_mobile_block(kcontrol->id.name);
@@ -434,7 +434,7 @@ static int wm8996_put_retune_mobile_enum(struct snd_kcontrol *kcontrol,
 static int wm8996_get_retune_mobile_enum(struct snd_kcontrol *kcontrol,
 					 struct snd_ctl_elem_value *ucontrol)
 {
-	struct snd_soc_codec *codec = snd_kcontrol_chip(kcontrol);
+	struct snd_soc_codec *codec = snd_soc_kcontrol_codec(kcontrol);
 	struct wm8996_priv *wm8996 = snd_soc_codec_get_drvdata(codec);
 	int block = wm8996_get_retune_mobile_block(kcontrol->id.name);
 
@@ -2595,7 +2595,7 @@ static void wm8996_retune_mobile_pdata(struct snd_soc_codec *codec)
 	dev_dbg(codec->dev, "Allocated %d unique ReTune Mobile names\n",
 		wm8996->num_retune_mobile_texts);
 
-	wm8996->retune_mobile_enum.max = wm8996->num_retune_mobile_texts;
+	wm8996->retune_mobile_enum.items = wm8996->num_retune_mobile_texts;
 	wm8996->retune_mobile_enum.texts = wm8996->retune_mobile_texts;
 
 	ret = snd_soc_add_codec_controls(codec, controls, ARRAY_SIZE(controls));
@@ -2627,14 +2627,6 @@ static int wm8996_probe(struct snd_soc_codec *codec)
 
 	init_completion(&wm8996->dcs_done);
 	init_completion(&wm8996->fll_lock);
-
-	codec->control_data = wm8996->regmap;
-
-	ret = snd_soc_codec_set_cache_io(codec, 16, 16, SND_SOC_REGMAP);
-	if (ret != 0) {
-		dev_err(codec->dev, "Failed to set cache I/O: %d\n", ret);
-		goto err;
-	}
 
 	if (wm8996->pdata.num_retune_mobile_cfgs)
 		wm8996_retune_mobile_pdata(codec);
@@ -2674,13 +2666,11 @@ static int wm8996_probe(struct snd_soc_codec *codec)
 		} else {
 			dev_err(codec->dev, "Failed to request IRQ: %d\n",
 				ret);
+			return ret;
 		}
 	}
 
 	return 0;
-
-err:
-	return ret;
 }
 
 static int wm8996_remove(struct snd_soc_codec *codec)

@@ -30,6 +30,8 @@
 #define CNTTIDR		0x08
 #define CNTTIDR_VIRT(n)	(BIT(1) << ((n) * 4))
 
+#define CNTPCT_LO	0x00
+#define CNTPCT_HI	0x04
 #define CNTVCT_LO	0x08
 #define CNTVCT_HI	0x0c
 #define CNTFRQ		0x10
@@ -66,6 +68,7 @@ static int arch_timer_ppi[MAX_TIMER_PPI];
 static struct clock_event_device __percpu *arch_timer_evt;
 
 static bool arch_timer_use_virtual = true;
+static bool arch_timer_c3stop;
 static bool arch_timer_mem_use_virtual;
 
 /*
@@ -263,7 +266,8 @@ static void __arch_timer_setup(unsigned type,
 	clk->features = CLOCK_EVT_FEAT_ONESHOT;
 
 	if (type == ARCH_CP15_TIMER) {
-		clk->features |= CLOCK_EVT_FEAT_C3STOP;
+		if (arch_timer_c3stop)
+			clk->features |= CLOCK_EVT_FEAT_C3STOP;
 		clk->name = "arch_sys_timer";
 		clk->rating = 450;
 		clk->cpumask = cpumask_of(smp_processor_id());
@@ -383,6 +387,19 @@ static u64 arch_counter_get_cntvct_mem(void)
 	return ((u64) vct_hi << 32) | vct_lo;
 }
 
+static u64 arch_counter_get_cntpct_mem(void)
+{
+	u32 pct_lo, pct_hi, tmp_hi;
+
+	do {
+		pct_hi = readl_relaxed(arch_counter_base + CNTPCT_HI);
+		pct_lo = readl_relaxed(arch_counter_base + CNTPCT_LO);
+		tmp_hi = readl_relaxed(arch_counter_base + CNTPCT_HI);
+	} while (pct_hi != tmp_hi);
+
+	return ((u64) pct_hi << 32) | pct_lo;
+}
+
 /*
  * Default to cp15 based access because arm64 uses this function for
  * sched_clock() before DT is probed and the cp15 method is guaranteed
@@ -426,10 +443,17 @@ static void __init arch_counter_register(unsigned type)
 	u64 start_count;
 
 	/* Register the CP15 based counter if we have one */
-	if (type & ARCH_CP15_TIMER)
-		arch_timer_read_counter = arch_counter_get_cntvct;
-	else
-		arch_timer_read_counter = arch_counter_get_cntvct_mem;
+	if (type & ARCH_CP15_TIMER) {
+		if (arch_timer_use_virtual)
+			arch_timer_read_counter = arch_counter_get_cntvct;
+		else
+			arch_timer_read_counter = arch_counter_get_cntpct;
+	} else {
+		if (arch_timer_use_virtual)
+			arch_timer_read_counter = arch_counter_get_cntvct_mem;
+		else
+			arch_timer_read_counter = arch_counter_get_cntpct_mem;
+	}
 
 	start_count = arch_timer_read_counter();
 	clocksource_register_hz(&clocksource_counter, arch_timer_rate);
@@ -646,6 +670,11 @@ static void __init arch_timer_init(struct device_node *np)
 		arch_timer_ppi[i] = irq_of_parse_and_map(np, i);
 	arch_timer_detect_rate(NULL, np);
 
+#ifdef CONFIG_ARM
+	if (of_property_read_bool(np, "arm,use-physical-timer"))
+		arch_timer_use_virtual = false;
+#endif
+
 	/*
 	 * If HYP mode is available, we know that the physical timer
 	 * has been configured to be accessible from PL1. Use it, so
@@ -663,6 +692,8 @@ static void __init arch_timer_init(struct device_node *np)
 			return;
 		}
 	}
+
+	arch_timer_c3stop = !of_property_read_bool(np, "always-on");
 
 	arch_timer_register();
 	arch_timer_common_init();

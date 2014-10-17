@@ -96,6 +96,9 @@
 #if defined(CONFIG_SYSCTL)
 
 /* External variables not in a header file. */
+#ifdef CONFIG_MMU
+extern int sysctl_mmap_noexec_taint;
+#endif
 extern int max_threads;
 extern int suid_dumpable;
 #ifdef CONFIG_COREDUMP
@@ -1434,6 +1437,15 @@ static struct ctl_table vm_table[] = {
 		.mode		= 0644,
 		.proc_handler	= mmap_min_addr_handler,
 	},
+	{
+		.procname	= "mmap_noexec_taint",
+		.data		= &sysctl_mmap_noexec_taint,
+		.maxlen		= sizeof(unsigned long),
+		.mode		= 0644,
+		.proc_handler	= proc_dointvec_minmax,
+		.extra1		= &zero,
+		.extra2		= &one,
+	},
 #endif
 #ifdef CONFIG_NUMA
 	{
@@ -1506,6 +1518,13 @@ static struct ctl_table vm_table[] = {
 		.maxlen		= sizeof(sysctl_admin_reserve_kbytes),
 		.mode		= 0644,
 		.proc_handler	= proc_doulongvec_minmax,
+	},
+	{
+		.procname	= "min_filelist_kbytes",
+		.data		= &min_filelist_kbytes,
+		.maxlen		= sizeof(min_filelist_kbytes),
+		.mode		= 0644,
+		.proc_handler	= proc_dointvec,
 	},
 	{ }
 };

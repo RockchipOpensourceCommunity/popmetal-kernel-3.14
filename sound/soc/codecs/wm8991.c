@@ -154,7 +154,7 @@ static const unsigned int out_sidetone_tlv[] = {
 static int wm899x_outpga_put_volsw_vu(struct snd_kcontrol *kcontrol,
 				      struct snd_ctl_elem_value *ucontrol)
 {
-	struct snd_soc_codec *codec = snd_kcontrol_chip(kcontrol);
+	struct snd_soc_codec *codec = snd_soc_kcontrol_codec(kcontrol);
 	int reg = kcontrol->private_value & 0xff;
 	int ret;
 	u16 val;
@@ -1251,17 +1251,6 @@ static int wm8991_remove(struct snd_soc_codec *codec)
 
 static int wm8991_probe(struct snd_soc_codec *codec)
 {
-	struct wm8991_priv *wm8991;
-	int ret;
-
-	wm8991 = snd_soc_codec_get_drvdata(codec);
-
-	ret = snd_soc_codec_set_cache_io(codec, 8, 16, SND_SOC_REGMAP);
-	if (ret < 0) {
-		dev_err(codec->dev, "Failed to set cache i/o: %d\n", ret);
-		return ret;
-	}
-
 	wm8991_set_bias_level(codec, SND_SOC_BIAS_STANDBY);
 
 	return 0;

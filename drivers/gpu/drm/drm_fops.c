@@ -79,36 +79,26 @@ static int drm_setup(struct drm_device * dev)
  */
 int drm_open(struct inode *inode, struct file *filp)
 {
-	struct drm_device *dev = NULL;
-	int minor_id = iminor(inode);
+	struct drm_device *dev;
 	struct drm_minor *minor;
-	int retcode = 0;
+	int retcode;
 	int need_setup = 0;
-	struct address_space *old_mapping;
-	struct address_space *old_imapping;
 
-	minor = idr_find(&drm_minors_idr, minor_id);
-	if (!minor)
-		return -ENODEV;
+	minor = drm_minor_acquire(iminor(inode));
+	if (IS_ERR(minor))
+		return PTR_ERR(minor);
 
-	if (!(dev = minor->dev))
-		return -ENODEV;
-
-	if (drm_device_is_unplugged(dev))
-		return -ENODEV;
+	dev = minor->dev;
+	if (drm_device_is_unplugged(dev)) {
+		retcode = -ENODEV;
+		goto err_release;
+	}
 
 	if (!dev->open_count++)
 		need_setup = 1;
-	mutex_lock(&dev->struct_mutex);
-	old_imapping = inode->i_mapping;
-	old_mapping = dev->dev_mapping;
-	if (old_mapping == NULL)
-		dev->dev_mapping = &inode->i_data;
-	/* ihold ensures nobody can remove inode with our i_data */
-	ihold(container_of(dev->dev_mapping, struct inode, i_data));
-	inode->i_mapping = dev->dev_mapping;
-	filp->f_mapping = dev->dev_mapping;
-	mutex_unlock(&dev->struct_mutex);
+
+	/* share address_space across all char-devs of a single device */
+	filp->f_mapping = dev->anon_inode->i_mapping;
 
 	retcode = drm_open_helper(inode, filp, dev);
 	if (retcode)
@@ -121,13 +111,9 @@ int drm_open(struct inode *inode, struct file *filp)
 	return 0;
 
 err_undo:
-	mutex_lock(&dev->struct_mutex);
-	filp->f_mapping = old_imapping;
-	inode->i_mapping = old_imapping;
-	iput(container_of(dev->dev_mapping, struct inode, i_data));
-	dev->dev_mapping = old_mapping;
-	mutex_unlock(&dev->struct_mutex);
 	dev->open_count--;
+err_release:
+	drm_minor_release(minor);
 	return retcode;
 }
 EXPORT_SYMBOL(drm_open);
@@ -143,33 +129,33 @@ EXPORT_SYMBOL(drm_open);
  */
 int drm_stub_open(struct inode *inode, struct file *filp)
 {
-	struct drm_device *dev = NULL;
+	struct drm_device *dev;
 	struct drm_minor *minor;
-	int minor_id = iminor(inode);
 	int err = -ENODEV;
 	const struct file_operations *new_fops;
 
 	DRM_DEBUG("\n");
 
 	mutex_lock(&drm_global_mutex);
-	minor = idr_find(&drm_minors_idr, minor_id);
-	if (!minor)
-		goto out;
+	minor = drm_minor_acquire(iminor(inode));
+	if (IS_ERR(minor))
+		goto out_unlock;
 
-	if (!(dev = minor->dev))
-		goto out;
-
+	dev = minor->dev;
 	if (drm_device_is_unplugged(dev))
-		goto out;
+		goto out_release;
 
 	new_fops = fops_get(dev->driver->fops);
 	if (!new_fops)
-		goto out;
+		goto out_release;
 
 	replace_fops(filp, new_fops);
 	if (filp->f_op->open)
 		err = filp->f_op->open(inode, filp);
-out:
+
+out_release:
+	drm_minor_release(minor);
+out_unlock:
 	mutex_unlock(&drm_global_mutex);
 	return err;
 }
@@ -260,9 +246,11 @@ static int drm_open_helper(struct inode *inode, struct file *filp,
 	 * any master object for render clients */
 	mutex_lock(&dev->struct_mutex);
 	if (!priv->minor->master && !drm_is_render_client(priv)) {
-		/* create a new master */
-		priv->minor->master = drm_master_create(priv->minor);
-		if (!priv->minor->master) {
+		/* create a new master but don't assign it yet
+		 * to ensure master->driver_priv is set up first
+		 */
+		struct drm_master* master_ptr = drm_master_create(priv->minor);
+		if (!master_ptr) {
 			mutex_unlock(&dev->struct_mutex);
 			ret = -ENOMEM;
 			goto out_close;
@@ -270,7 +258,7 @@ static int drm_open_helper(struct inode *inode, struct file *filp,
 
 		priv->is_master = 1;
 		/* take another reference for the copy in the local file priv */
-		priv->master = drm_master_get(priv->minor->master);
+		priv->master = drm_master_get(master_ptr);
 
 		priv->authenticated = 1;
 
@@ -280,7 +268,7 @@ static int drm_open_helper(struct inode *inode, struct file *filp,
 			if (ret) {
 				mutex_lock(&dev->struct_mutex);
 				/* drop both references if this fails */
-				drm_master_put(&priv->minor->master);
+				drm_master_put(&master_ptr);
 				drm_master_put(&priv->master);
 				mutex_unlock(&dev->struct_mutex);
 				goto out_close;
@@ -291,12 +279,13 @@ static int drm_open_helper(struct inode *inode, struct file *filp,
 			ret = dev->driver->master_set(dev, priv, true);
 			if (ret) {
 				/* drop both references if this fails */
-				drm_master_put(&priv->minor->master);
+				drm_master_put(&master_ptr);
 				drm_master_put(&priv->master);
 				mutex_unlock(&dev->struct_mutex);
 				goto out_close;
 			}
 		}
+		priv->minor->master = master_ptr;
 	} else if (!drm_is_render_client(priv)) {
 		/* get a reference to the master */
 		priv->master = drm_master_get(priv->minor->master);
@@ -434,7 +423,6 @@ int drm_lastclose(struct drm_device * dev)
 
 	drm_legacy_dma_takedown(dev);
 
-	dev->dev_mapping = NULL;
 	mutex_unlock(&dev->struct_mutex);
 
 	drm_legacy_dev_reinit(dev);
@@ -458,7 +446,8 @@ int drm_lastclose(struct drm_device * dev)
 int drm_release(struct inode *inode, struct file *filp)
 {
 	struct drm_file *file_priv = filp->private_data;
-	struct drm_device *dev = file_priv->minor->dev;
+	struct drm_minor *minor = file_priv->minor;
+	struct drm_device *dev = minor->dev;
 	int retcode = 0;
 
 	mutex_lock(&drm_global_mutex);
@@ -549,9 +538,6 @@ int drm_release(struct inode *inode, struct file *filp)
 		}
 	}
 
-	BUG_ON(dev->dev_mapping == NULL);
-	iput(container_of(dev->dev_mapping, struct inode, i_data));
-
 	/* drop the reference held my the file priv */
 	if (file_priv->master)
 		drm_master_put(&file_priv->master);
@@ -579,6 +565,8 @@ int drm_release(struct inode *inode, struct file *filp)
 			drm_put_dev(dev);
 	}
 	mutex_unlock(&drm_global_mutex);
+
+	drm_minor_release(minor);
 
 	return retcode;
 }

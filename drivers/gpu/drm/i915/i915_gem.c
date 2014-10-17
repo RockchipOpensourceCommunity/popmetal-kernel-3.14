@@ -1014,7 +1014,8 @@ static int __wait_seqno(struct intel_ring_buffer *ring, u32 seqno,
 			struct timespec *timeout,
 			struct drm_i915_file_private *file_priv)
 {
-	drm_i915_private_t *dev_priv = ring->dev->dev_private;
+	struct drm_device *dev = ring->dev;
+	drm_i915_private_t *dev_priv = dev->dev_private;
 	const bool irq_test_in_progress =
 		ACCESS_ONCE(dev_priv->gpu_error.test_irq_rings) & intel_ring_flag(ring);
 	struct timespec before, now;
@@ -1029,7 +1030,7 @@ static int __wait_seqno(struct intel_ring_buffer *ring, u32 seqno,
 
 	timeout_expire = timeout ? jiffies + timespec_to_jiffies_timeout(timeout) : 0;
 
-	if (dev_priv->info->gen >= 6 && can_wait_boost(file_priv)) {
+	if (INTEL_INFO(dev)->gen >= 6 && can_wait_boost(file_priv)) {
 		gen6_rps_boost(dev_priv);
 		if (file_priv)
 			mod_delayed_work(dev_priv->wq,
@@ -1501,7 +1502,8 @@ i915_gem_release_mmap(struct drm_i915_gem_object *obj)
 	if (!obj->fault_mappable)
 		return;
 
-	drm_vma_node_unmap(&obj->base.vma_node, obj->base.dev->dev_mapping);
+	drm_vma_node_unmap(&obj->base.vma_node,
+			   obj->base.dev->anon_inode->i_mapping);
 	obj->fault_mappable = false;
 }
 
@@ -5110,8 +5112,14 @@ i915_gem_inactive_scan(struct shrinker *shrinker, struct shrink_control *sc)
 		freed += __i915_gem_shrink(dev_priv,
 					   sc->nr_to_scan - freed,
 					   false);
-	if (freed < sc->nr_to_scan)
-		freed += i915_gem_shrink_all(dev_priv);
+
+	/* We don't want to shrink all objects. When the shrinker is
+	 * called too often, this causes bouncing of GEM objects in
+	 * and out of the GTT, as well as GPU synchronization which
+	 * slows the system to a crawl.
+	 */
+	/*if (freed < sc->nr_to_scan)
+		freed += i915_gem_shrink_all(dev_priv);*/
 
 	if (unlock)
 		mutex_unlock(&dev->struct_mutex);

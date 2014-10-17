@@ -17,7 +17,7 @@
 #ifndef __MACH_TEGRA_SLEEP_H
 #define __MACH_TEGRA_SLEEP_H
 
-#include "iomap.h"
+#include <soc/tegra/iomap.h>
 
 #define TEGRA_ARM_PERIF_VIRT (TEGRA_ARM_PERIF_BASE - IO_CPU_PHYS \
 					+ IO_CPU_VIRT)
@@ -161,9 +161,6 @@ void tegra_disable_clean_inv_dcache(u32 flag);
 #ifdef CONFIG_HOTPLUG_CPU
 void tegra20_hotplug_shutdown(void);
 void tegra30_hotplug_shutdown(void);
-void tegra_hotplug_init(void);
-#else
-static inline void tegra_hotplug_init(void) {}
 #endif
 
 void tegra20_cpu_shutdown(int cpu);

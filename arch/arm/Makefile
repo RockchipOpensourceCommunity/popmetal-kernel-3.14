@@ -180,6 +180,7 @@ machine-$(CONFIG_ARCH_OMAP2PLUS)	+= omap2
 machine-$(CONFIG_ARCH_ORION5X)		+= orion5x
 machine-$(CONFIG_ARCH_PICOXCELL)	+= picoxcell
 machine-$(CONFIG_ARCH_PXA)		+= pxa
+machine-$(CONFIG_ARCH_QCOM)		+= qcom
 machine-$(CONFIG_ARCH_REALVIEW)		+= realview
 machine-$(CONFIG_ARCH_ROCKCHIP)		+= rockchip
 machine-$(CONFIG_ARCH_RPC)		+= rpc
@@ -234,8 +235,10 @@ MACHINE  := arch/arm/mach-$(word 1,$(machine-y))/
 else
 MACHINE  :=
 endif
+ifeq ($(CONFIG_ARCH_QCOM),)
 ifeq ($(CONFIG_ARCH_MULTIPLATFORM),y)
 MACHINE  :=
+endif
 endif
 
 machdirs := $(patsubst %,arch/arm/mach-%/,$(machine-y))
@@ -312,9 +315,13 @@ $(INSTALL_TARGETS):
 %.dtb: | scripts
 	$(Q)$(MAKE) $(build)=$(boot)/dts MACHINE=$(MACHINE) $(boot)/dts/$@
 
-PHONY += dtbs
-dtbs: scripts
-	$(Q)$(MAKE) $(build)=$(boot)/dts MACHINE=$(MACHINE) dtbs
+PHONY += dtbs dtbs_install
+
+dtbs: prepare scripts
+	$(Q)$(MAKE) $(build)=$(boot)/dts MACHINE=$(MACHINE)
+
+dtbs_install:
+	$(Q)$(MAKE) $(dtbinst)=$(boot)/dts MACHINE=$(MACHINE)
 
 zImage-dtb: vmlinux scripts dtbs
 	$(Q)$(MAKE) $(build)=$(boot) MACHINE=$(MACHINE) $(boot)/$@
@@ -336,6 +343,7 @@ define archhelp
   echo  '  bootpImage    - Combined zImage and initial RAM disk'
   echo  '                  (supply initrd image via make variable INITRD=<path>)'
   echo  '* dtbs          - Build device tree blobs for enabled boards'
+  echo  '  dtbs_install  - Install dtbs to $(INSTALL_DTBS_PATH)'
   echo  '  install       - Install uncompressed kernel'
   echo  '  zinstall      - Install compressed kernel'
   echo  '  uinstall      - Install U-Boot wrapped compressed kernel'

@@ -1,0 +1,17 @@
+#
+# QCOM Soc drivers
+#
+config QCOM_GSBI
+        tristate "QCOM General Serial Bus Interface"
+        depends on ARCH_QCOM
+        help
+          Say y here to enable GSBI support.  The GSBI provides control
+          functions for connecting the underlying serial UART, SPI, and I2C
+          devices to the output pins.
+
+config QCOM_TCSR
+        tristate "QCOM Top Control and Status Registers"
+        depends on ARCH_QCOM
+        help
+          Say y here to enable TCSR support.  The TCSR provides control
+          functions for various peripherals.

@@ -43,6 +43,10 @@
 #include <linux/acpi.h>
 #include "i2c-designware-core.h"
 
+static bool force_std_mode;
+module_param(force_std_mode, bool, 0);
+MODULE_PARM_DESC(force_std_mode, "Force standard mode (100 kHz)");
+
 static struct i2c_algorithm i2c_dw_algo = {
 	.master_xfer	= i2c_dw_xfer,
 	.functionality	= i2c_dw_func,
@@ -169,7 +173,10 @@ static int dw_i2c_probe(struct platform_device *pdev)
 		I2C_FUNC_SMBUS_WORD_DATA |
 		I2C_FUNC_SMBUS_I2C_BLOCK;
 	dev->master_cfg =  DW_IC_CON_MASTER | DW_IC_CON_SLAVE_DISABLE |
-		DW_IC_CON_RESTART_EN | DW_IC_CON_SPEED_FAST;
+		DW_IC_CON_RESTART_EN;
+
+	dev->master_cfg |= (force_std_mode ? DW_IC_CON_SPEED_STD :
+		DW_IC_CON_SPEED_FAST);
 
 	/* Try first if we can configure the device from ACPI */
 	r = dw_i2c_acpi_configure(pdev);
@@ -240,12 +247,13 @@ static const struct of_device_id dw_i2c_of_match[] = {
 MODULE_DEVICE_TABLE(of, dw_i2c_of_match);
 #endif
 
-#ifdef CONFIG_PM_SLEEP
+#ifdef CONFIG_PM
 static int dw_i2c_suspend(struct device *dev)
 {
 	struct platform_device *pdev = to_platform_device(dev);
 	struct dw_i2c_dev *i_dev = platform_get_drvdata(pdev);
 
+	i2c_dw_disable(i_dev);
 	clk_disable_unprepare(i_dev->clk);
 
 	return 0;
@@ -261,12 +269,10 @@ static int dw_i2c_resume(struct device *dev)
 
 	return 0;
 }
-
-static SIMPLE_DEV_PM_OPS(dw_i2c_dev_pm_ops, dw_i2c_suspend, dw_i2c_resume);
-#define DW_I2C_DEV_PM_OPS	(&dw_i2c_dev_pm_ops)
-#else
-#define DW_I2C_DEV_PM_OPS	NULL
 #endif
+
+static UNIVERSAL_DEV_PM_OPS(dw_i2c_dev_pm_ops, dw_i2c_suspend,
+			    dw_i2c_resume, NULL);
 
 /* work with hotplug and coldplug */
 MODULE_ALIAS("platform:i2c_designware");
@@ -279,7 +285,7 @@ static struct platform_driver dw_i2c_driver = {
 		.owner	= THIS_MODULE,
 		.of_match_table = of_match_ptr(dw_i2c_of_match),
 		.acpi_match_table = ACPI_PTR(dw_i2c_acpi_match),
-		.pm	= DW_I2C_DEV_PM_OPS,
+		.pm	= &dw_i2c_dev_pm_ops,
 	},
 };
 

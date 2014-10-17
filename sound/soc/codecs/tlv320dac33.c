@@ -122,7 +122,6 @@ struct tlv320dac33_priv {
 	unsigned int uthr;
 
 	enum dac33_state state;
-	enum snd_soc_control_type control_type;
 	void *control_data;
 };
 
@@ -443,7 +442,7 @@ static int dac33_playback_event(struct snd_soc_dapm_widget *w,
 static int dac33_get_fifo_mode(struct snd_kcontrol *kcontrol,
 			 struct snd_ctl_elem_value *ucontrol)
 {
-	struct snd_soc_codec *codec = snd_kcontrol_chip(kcontrol);
+	struct snd_soc_codec *codec = snd_soc_kcontrol_codec(kcontrol);
 	struct tlv320dac33_priv *dac33 = snd_soc_codec_get_drvdata(codec);
 
 	ucontrol->value.integer.value[0] = dac33->fifo_mode;
@@ -454,14 +453,14 @@ static int dac33_get_fifo_mode(struct snd_kcontrol *kcontrol,
 static int dac33_set_fifo_mode(struct snd_kcontrol *kcontrol,
 			 struct snd_ctl_elem_value *ucontrol)
 {
-	struct snd_soc_codec *codec = snd_kcontrol_chip(kcontrol);
+	struct snd_soc_codec *codec = snd_soc_kcontrol_codec(kcontrol);
 	struct tlv320dac33_priv *dac33 = snd_soc_codec_get_drvdata(codec);
 	int ret = 0;
 
 	if (dac33->fifo_mode == ucontrol->value.integer.value[0])
 		return 0;
 	/* Do not allow changes while stream is running*/
-	if (codec->active)
+	if (snd_soc_codec_is_active(codec))
 		return -EPERM;
 
 	if (ucontrol->value.integer.value[0] < 0 ||
@@ -1411,7 +1410,7 @@ static int dac33_soc_probe(struct snd_soc_codec *codec)
 	if (dac33->irq >= 0) {
 		ret = request_irq(dac33->irq, dac33_interrupt_handler,
 				  IRQF_TRIGGER_RISING,
-				  codec->name, codec);
+				  codec->component.name, codec);
 		if (ret < 0) {
 			dev_err(codec->dev, "Could not request IRQ%d (%d)\n",
 						dac33->irq, ret);

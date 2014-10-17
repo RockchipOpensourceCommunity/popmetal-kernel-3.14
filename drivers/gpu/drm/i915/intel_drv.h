@@ -52,7 +52,7 @@
 			break;						\
 		}							\
 		if (W && drm_can_sleep())  {				\
-			msleep(W);					\
+			usleep_range(W * 50, W * 100);			\
 		} else {						\
 			cpu_relax();					\
 		}							\
@@ -77,6 +77,12 @@
 /* the i915, i945 have a single sDVO i2c bus - which is different */
 #define MAX_OUTPUTS 6
 /* maximum connectors per crtcs in the mode set */
+
+/* Maximum cursor sizes */
+#define GEN2_CURSOR_WIDTH 64
+#define GEN2_CURSOR_HEIGHT 64
+#define CURSOR_WIDTH 256
+#define CURSOR_HEIGHT 256
 
 #define INTEL_I2C_BUS_DVO 1
 #define INTEL_I2C_BUS_SDVO 2
@@ -356,6 +362,7 @@ struct intel_crtc {
 	uint32_t cursor_addr;
 	int16_t cursor_x, cursor_y;
 	int16_t cursor_width, cursor_height;
+	int16_t max_cursor_width, max_cursor_height;
 	bool cursor_visible;
 
 	struct intel_crtc_config config;
@@ -477,6 +484,7 @@ struct intel_dp {
 	uint8_t downstream_ports[DP_MAX_DOWNSTREAM_PORTS];
 	struct i2c_adapter adapter;
 	struct i2c_algo_dp_aux_data algo;
+	struct drm_dp_aux aux;
 	uint8_t train_set[4];
 	int panel_power_up_delay;
 	int panel_power_down_delay;
@@ -485,7 +493,8 @@ struct intel_dp {
 	int backlight_off_delay;
 	struct delayed_work panel_vdd_work;
 	bool want_panel_vdd;
-	bool psr_setup_done;
+	bool use_tps3;
+	bool is_apple_vga;
 	struct intel_connector *attached_connector;
 };
 
@@ -534,6 +543,8 @@ struct intel_unpin_work {
 #define INTEL_FLIP_INACTIVE	0
 #define INTEL_FLIP_PENDING	1
 #define INTEL_FLIP_COMPLETE	2
+	u32 flip_count;
+	u32 gtt_offset;
 	bool enable_stall_check;
 };
 
@@ -593,6 +604,8 @@ void snb_enable_pm_irq(struct drm_i915_private *dev_priv, uint32_t mask);
 void snb_disable_pm_irq(struct drm_i915_private *dev_priv, uint32_t mask);
 void hsw_pc8_disable_interrupts(struct drm_device *dev);
 void hsw_pc8_restore_interrupts(struct drm_device *dev);
+void bdw_enable_pm_irq(struct drm_i915_private *dev_priv, uint32_t mask);
+void bdw_disable_pm_irq(struct drm_i915_private *dev_priv, uint32_t mask);
 
 
 /* intel_crt.c */
@@ -820,6 +833,7 @@ void intel_gmch_panel_fitting(struct intel_crtc *crtc,
 			      int fitting_mode);
 void intel_panel_set_backlight(struct intel_connector *connector, u32 level,
 			       u32 max);
+u32 intel_panel_get_backlight(struct intel_connector *connector);
 int intel_panel_setup_backlight(struct drm_connector *connector);
 void intel_panel_enable_backlight(struct intel_connector *connector);
 void intel_panel_disable_backlight(struct intel_connector *connector);

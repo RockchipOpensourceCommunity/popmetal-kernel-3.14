@@ -390,7 +390,7 @@ static int wm8955_set_deemph(struct snd_soc_codec *codec)
 static int wm8955_get_deemph(struct snd_kcontrol *kcontrol,
 			     struct snd_ctl_elem_value *ucontrol)
 {
-	struct snd_soc_codec *codec = snd_kcontrol_chip(kcontrol);
+	struct snd_soc_codec *codec = snd_soc_kcontrol_codec(kcontrol);
 	struct wm8955_priv *wm8955 = snd_soc_codec_get_drvdata(codec);
 
 	ucontrol->value.enumerated.item[0] = wm8955->deemph;
@@ -400,7 +400,7 @@ static int wm8955_get_deemph(struct snd_kcontrol *kcontrol,
 static int wm8955_put_deemph(struct snd_kcontrol *kcontrol,
 			     struct snd_ctl_elem_value *ucontrol)
 {
-	struct snd_soc_codec *codec = snd_kcontrol_chip(kcontrol);
+	struct snd_soc_codec *codec = snd_soc_kcontrol_codec(kcontrol);
 	struct wm8955_priv *wm8955 = snd_soc_codec_get_drvdata(codec);
 	int deemph = ucontrol->value.enumerated.item[0];
 
@@ -895,14 +895,6 @@ static int wm8955_probe(struct snd_soc_codec *codec)
 	struct wm8955_priv *wm8955 = snd_soc_codec_get_drvdata(codec);
 	struct wm8955_pdata *pdata = dev_get_platdata(codec->dev);
 	int ret, i;
-
-	codec->control_data = wm8955->regmap;
-
-	ret = snd_soc_codec_set_cache_io(codec, 7, 9, SND_SOC_REGMAP);
-	if (ret != 0) {
-		dev_err(codec->dev, "Failed to set cache I/O: %d\n", ret);
-		return ret;
-	}
 
 	for (i = 0; i < ARRAY_SIZE(wm8955->supplies); i++)
 		wm8955->supplies[i].supply = wm8955_supply_names[i];

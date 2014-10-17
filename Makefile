@@ -367,6 +367,11 @@ USERINCLUDE    := \
 		-Iinclude/generated/uapi \
                 -include $(srctree)/include/linux/kconfig.h
 
+ifneq ($(WIFIVERSION),)
+USERINCLUDE	:= -I$(srctree)/include/wireless$(WIFIVERSION)/uapi \
+		$(USERINCLUDE)
+endif
+
 # Use LINUXINCLUDE when you must reference the include/ directory.
 # Needed to be compatible with the O= option
 LINUXINCLUDE    := \
@@ -375,6 +380,13 @@ LINUXINCLUDE    := \
 		$(if $(KBUILD_SRC), -I$(srctree)/include) \
 		-Iinclude \
 		$(USERINCLUDE)
+
+# This is used to prepend the include path in case we're building with
+# a different wifi stack than the native one.
+ifneq ($(WIFIVERSION),)
+LINUXINCLUDE	:= -I$(srctree)/include/wireless$(WIFIVERSION) \
+		$(LINUXINCLUDE)
+endif
 
 KBUILD_CPPFLAGS := -D__KERNEL__
 
@@ -610,10 +622,14 @@ ifdef CONFIG_CC_STACKPROTECTOR_REGULAR
   endif
 else
 ifdef CONFIG_CC_STACKPROTECTOR_STRONG
-  stackp-flag := -fstack-protector-strong
-  ifeq ($(call cc-option, $(stackp-flag)),)
+  stackp-flag := $(call cc-option,-fstack-protector-strong,-fstack-protector)
+  ifeq ($(stackp-flag)),)
     $(warning Cannot use CONFIG_CC_STACKPROTECTOR_STRONG: \
-	      -fstack-protector-strong not supported by compiler)
+              neither -fstack-protector-strong nor -fstack-protector is \
+              supported by compiler)
+  else ifeq ($(stackp-flag)),-fstack-protector)
+    $(warning CONFIG_CC_STACKPROTECTOR_STRONG: -fstack-protector-strong \
+              is not supported by compiler, downgrade to -fstack-protector)
   endif
 else
   # Force off for distro compilers that enable stack protector by default.
@@ -727,6 +743,13 @@ export KBUILD_IMAGE ?= vmlinux
 # INSTALL_PATH specifies where to place the updated kernel and system map
 # images. Default is /boot, but you can set it to other values
 export	INSTALL_PATH ?= /boot
+
+#
+# INSTALL_DTBS_PATH specifies a prefix for relocations required by build roots.
+# Like INSTALL_MOD_PATH, it isn't defined in the Makefile, but can be passed as
+# an argument if needed. Otherwise it defaults to the kernel install path
+#
+export INSTALL_DTBS_PATH ?= $(INSTALL_PATH)/dtbs/$(KERNELRELEASE)
 
 #
 # INSTALL_MOD_PATH specifies a prefix to MODLIB for module directory
@@ -1013,7 +1036,7 @@ PHONY += modules_install
 modules_install: _modinst_ _modinst_post
 
 PHONY += _modinst_
-_modinst_:
+_modinst_: include/config/kernel.release
 	@rm -rf $(MODLIB)/kernel
 	@rm -f $(MODLIB)/source
 	@mkdir -p $(MODLIB)/kernel
@@ -1282,7 +1305,7 @@ modules_install: _emodinst_ _emodinst_post
 
 install-dir := $(if $(INSTALL_MOD_DIR),$(INSTALL_MOD_DIR),extra)
 PHONY += _emodinst_
-_emodinst_:
+_emodinst_: include/config/kernel.release
 	$(Q)mkdir -p $(MODLIB)/$(install-dir)
 	$(Q)$(MAKE) -f $(srctree)/scripts/Makefile.modinst
 

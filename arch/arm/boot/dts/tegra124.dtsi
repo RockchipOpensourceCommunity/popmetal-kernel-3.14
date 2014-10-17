@@ -2,6 +2,7 @@
 #include <dt-bindings/gpio/tegra-gpio.h>
 #include <dt-bindings/pinctrl/pinctrl-tegra.h>
 #include <dt-bindings/interrupt-controller/arm-gic.h>
+#include <dt-bindings/thermal/tegra124-soctherm.h>
 
 #include "skeleton.dtsi"
 
@@ -38,6 +39,11 @@
 		reg = <0x60006000 0x1000>;
 		#clock-cells = <1>;
 		#reset-cells = <1>;
+	};
+
+	flow-controller@60007000 {
+		compatible = "nvidia,tegra124-flowctrl";
+		reg = <0x60007000 0x1000>;
 	};
 
 	gpio: gpio@6000d000 {
@@ -98,10 +104,17 @@
 		#dma-cells = <1>;
 	};
 
+	apbmisc@70000800 {
+		compatible = "nvidia,tegra124-apbmisc", "nvidia,tegra20-apbmisc";
+		reg = <0x70000800 0x64>,	/* Chip revision */
+		      <0x7000E864 0x04>;	/* Strapping options */
+	};
+
 	pinmux: pinmux@70000868 {
 		compatible = "nvidia,tegra124-pinmux";
 		reg = <0x70000868 0x164>,	/* Pad control registers */
-		      <0x70003000 0x434>;	/* Mux registers */
+		      <0x70003000 0x434>,	/* Mux registers */
+		      <0x70000820 0x8>;		/* MIPI pad control */
 	};
 
 	/*
@@ -199,6 +212,7 @@
 		reset-names = "i2c";
 		dmas = <&apbdma 21>, <&apbdma 21>;
 		dma-names = "rx", "tx";
+		nvidia,controller-id = <0>;
 		status = "disabled";
 	};
 
@@ -214,6 +228,7 @@
 		reset-names = "i2c";
 		dmas = <&apbdma 22>, <&apbdma 22>;
 		dma-names = "rx", "tx";
+		nvidia,controller-id = <1>;
 		status = "disabled";
 	};
 
@@ -229,6 +244,7 @@
 		reset-names = "i2c";
 		dmas = <&apbdma 23>, <&apbdma 23>;
 		dma-names = "rx", "tx";
+		nvidia,controller-id = <2>;
 		status = "disabled";
 	};
 
@@ -244,6 +260,7 @@
 		reset-names = "i2c";
 		dmas = <&apbdma 26>, <&apbdma 26>;
 		dma-names = "rx", "tx";
+		nvidia,controller-id = <3>;
 		status = "disabled";
 	};
 
@@ -259,6 +276,7 @@
 		reset-names = "i2c";
 		dmas = <&apbdma 24>, <&apbdma 24>;
 		dma-names = "rx", "tx";
+		nvidia,controller-id = <4>;
 		status = "disabled";
 	};
 
@@ -274,6 +292,7 @@
 		reset-names = "i2c";
 		dmas = <&apbdma 30>, <&apbdma 30>;
 		dma-names = "rx", "tx";
+		nvidia,controller-id = <5>;
 		status = "disabled";
 	};
 
@@ -379,6 +398,15 @@
 		reg = <0x7000e400 0x400>;
 		clocks = <&tegra_car TEGRA124_CLK_PCLK>, <&clk32k_in>;
 		clock-names = "pclk", "clk32k_in";
+	};
+
+	fuse@0,7000f800 {
+		compatible = "nvidia,tegra124-efuse";
+		reg = <0x0 0x7000f800 0x0 0x400>;
+		clocks = <&tegra_car TEGRA124_CLK_FUSE>;
+		clock-names = "fuse";
+		resets = <&tegra_car 39>;
+		reset-names = "fuse";
 	};
 
 	sdhci@700b0000 {
@@ -522,6 +550,67 @@
 			reset-names = "i2s";
 			status = "disabled";
 		};
+	};
+
+	thermal-zones {
+		cpu {
+			polling-delay-passive = <1000>;
+			polling-delay = <1000>;
+
+			thermal-sensors =
+				<&soctherm TEGRA124_SOCTHERM_SENSOR_CPU>;
+		};
+
+		mem {
+			polling-delay-passive = <1000>;
+			polling-delay = <1000>;
+
+			thermal-sensors =
+				<&soctherm TEGRA124_SOCTHERM_SENSOR_MEM>;
+		};
+
+		gpu {
+			polling-delay-passive = <1000>;
+			polling-delay = <1000>;
+
+			thermal-sensors =
+				<&soctherm TEGRA124_SOCTHERM_SENSOR_GPU>;
+		};
+
+		pllx {
+			polling-delay-passive = <1000>;
+			polling-delay = <1000>;
+
+			thermal-sensors =
+				<&soctherm TEGRA124_SOCTHERM_SENSOR_PLLX>;
+		};
+	};
+
+	soctherm: soctherm@0,700e2000 {
+		compatible = "nvidia,tegra124-soctherm";
+		reg = <0x0 0x700e2000 0x0 0x1000>;
+		interrupts = <GIC_SPI 48 IRQ_TYPE_LEVEL_HIGH>;
+		clocks = <&tegra_car TEGRA124_CLK_TSENSOR>,
+			<&tegra_car TEGRA124_CLK_SOC_THERM>;
+		clock-names = "tsensor", "soctherm";
+		resets = <&tegra_car 78>;
+		reset-names = "soctherm";
+		#thermal-sensor-cells = <1>;
+
+		thermtrip {
+			  sensor-groups {
+				  cpu {
+					  temperature = <104000>;
+				  };
+				  gpu {
+					  temperature = <105000>;
+				  };
+				  mem {
+					  temperature = <105000>;
+				  };
+			  };
+		};
+
 	};
 
 	cpus {

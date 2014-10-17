@@ -14,6 +14,17 @@ config MMC_ARMMMCI
 
 	  If unsure, say N.
 
+config MMC_QCOM_DML
+	tristate "Qualcomm Data Mover for SD Card Controller"
+	depends on MMC_ARMMMCI && QCOM_BAM_DMA
+	default y
+	help
+	  This selects the Qualcomm Data Mover lite/local on SD Card controller.
+	  This option will enable the dma to work correctly, if you are using
+	  Qcom SOCs and MMC, you would probably need this option to get DMA working.
+
+	  if unsure, say N.
+
 config MMC_PXA
 	tristate "Intel PXA25x/26x/27x Multimedia Card Interface support"
 	depends on ARCH_PXA
@@ -334,6 +345,19 @@ config MMC_ATMELMCI
 
 	  If unsure, say N.
 
+config MMC_SDHCI_MSM
+	tristate "Qualcomm SDHCI Controller Support"
+	depends on ARCH_QCOM
+	depends on MMC_SDHCI_PLTFM
+	help
+	  This selects the Secure Digital Host Controller Interface (SDHCI)
+	  support present in Qualcomm SOCs. The controller supports
+	  SD/MMC/SDIO devices.
+
+	  If you have a controller with this interface, say Y or M here.
+
+	  If unsure, say N.
+
 config MMC_MSM
 	tristate "Qualcomm SDCC Controller Support"
 	depends on MMC && (ARCH_MSM7X00A || ARCH_MSM7X30 || ARCH_QSD8X50)
@@ -543,7 +567,8 @@ config SDH_BFIN_MISSING_CMD_PULLUP_WORKAROUND
 
 config MMC_DW
 	tristate "Synopsys DesignWare Memory Card Interface"
-	depends on ARC || ARM
+	depends on HAS_DMA
+	depends on ARC || ARM || MIPS || COMPILE_TEST
 	help
 	  This selects support for the Synopsys DesignWare Mobile Storage IP
 	  block, this provides host support for SD and MMC interfaces, in both
@@ -580,14 +605,6 @@ config MMC_DW_EXYNOS
 	  Synopsys DesignWare Memory Card Interface driver. Select this option
 	  for platforms based on Exynos4 and Exynos5 SoC's.
 
-config MMC_DW_SOCFPGA
-	tristate "SOCFPGA specific extensions for Synopsys DW Memory Card Interface"
-	depends on MMC_DW && MFD_SYSCON
-	select MMC_DW_PLTFM
-	help
-	  This selects support for Altera SoCFPGA specific extensions to the
-	  Synopsys DesignWare Memory Card Interface driver.
-
 config MMC_DW_K3
 	tristate "K3 specific extensions for Synopsys DW Memory Card Interface"
 	depends on MMC_DW
@@ -608,6 +625,15 @@ config MMC_DW_PCI
 	  If you have a controller with this interface, say Y or M here.
 
 	  If unsure, say N.
+
+config MMC_DW_ROCKCHIP
+	tristate "Rockchip specific extensions for Synopsys DW Memory Card Interface"
+	depends on MMC_DW && ARCH_ROCKCHIP
+	select MMC_DW_PLTFM
+	help
+	  This selects support for Rockchip SoC specific extensions to the
+	  Synopsys DesignWare Memory Card Interface driver. Select this option
+	  for platforms based on RK3066, RK3188 and RK3288 SoC's.
 
 config MMC_SH_MMCIF
 	tristate "SuperH Internal MMCIF support"

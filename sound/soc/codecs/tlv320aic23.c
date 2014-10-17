@@ -82,7 +82,7 @@ static const DECLARE_TLV_DB_SCALE(sidetone_vol_tlv, -1800, 300, 0);
 static int snd_soc_tlv320aic23_put_volsw(struct snd_kcontrol *kcontrol,
 	struct snd_ctl_elem_value *ucontrol)
 {
-	struct snd_soc_codec *codec = snd_kcontrol_chip(kcontrol);
+	struct snd_soc_codec *codec = snd_soc_kcontrol_codec(kcontrol);
 	u16 val, reg;
 
 	val = (ucontrol->value.integer.value[0] & 0x07);
@@ -105,7 +105,7 @@ static int snd_soc_tlv320aic23_put_volsw(struct snd_kcontrol *kcontrol,
 static int snd_soc_tlv320aic23_get_volsw(struct snd_kcontrol *kcontrol,
 	struct snd_ctl_elem_value *ucontrol)
 {
-	struct snd_soc_codec *codec = snd_kcontrol_chip(kcontrol);
+	struct snd_soc_codec *codec = snd_soc_kcontrol_codec(kcontrol);
 	u16 val;
 
 	val = snd_soc_read(codec, TLV320AIC23_ANLG) & (0x1C0);
@@ -400,7 +400,7 @@ static void tlv320aic23_shutdown(struct snd_pcm_substream *substream,
 	struct aic23 *aic23 = snd_soc_codec_get_drvdata(codec);
 
 	/* deactivate */
-	if (!codec->active) {
+	if (!snd_soc_codec_is_active(codec)) {
 		udelay(50);
 		snd_soc_write(codec, TLV320AIC23_ACTIVE, 0x0);
 	}
@@ -559,14 +559,6 @@ static int tlv320aic23_resume(struct snd_soc_codec *codec)
 
 static int tlv320aic23_probe(struct snd_soc_codec *codec)
 {
-	int ret;
-
-	ret = snd_soc_codec_set_cache_io(codec, 7, 9, SND_SOC_REGMAP);
-	if (ret < 0) {
-		dev_err(codec->dev, "Failed to set cache I/O: %d\n", ret);
-		return ret;
-	}
-
 	/* Reset codec */
 	snd_soc_write(codec, TLV320AIC23_RESET, 0);
 

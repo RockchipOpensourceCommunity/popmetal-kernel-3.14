@@ -13,12 +13,14 @@ drm-y       :=	drm_auth.o drm_buffer.o drm_bufs.o drm_cache.o \
 		drm_crtc.o drm_modes.o drm_edid.o \
 		drm_info.o drm_debugfs.o drm_encoder_slave.o \
 		drm_trace_points.o drm_global.o drm_prime.o \
-		drm_rect.o drm_vma_manager.o drm_flip_work.o
+		drm_rect.o drm_vma_manager.o drm_flip_work.o \
+		drm_plane_helper.o
 
 drm-$(CONFIG_COMPAT) += drm_ioc32.o
 drm-$(CONFIG_DRM_GEM_CMA_HELPER) += drm_gem_cma_helper.o
 drm-$(CONFIG_PCI) += ati_pcigart.o
 drm-$(CONFIG_DRM_PANEL) += drm_panel.o
+drm-$(CONFIG_OF) += drm_of.o
 
 drm-usb-y   := drm_usb.o
 
@@ -49,6 +51,7 @@ obj-$(CONFIG_DRM_VMWGFX)+= vmwgfx/
 obj-$(CONFIG_DRM_VIA)	+=via/
 obj-$(CONFIG_DRM_NOUVEAU) +=nouveau/
 obj-$(CONFIG_DRM_EXYNOS) +=exynos/
+obj-$(CONFIG_DRM_ROCKCHIP) +=rockchip/
 obj-$(CONFIG_DRM_GMA500) += gma500/
 obj-$(CONFIG_DRM_UDL) += udl/
 obj-$(CONFIG_DRM_AST) += ast/

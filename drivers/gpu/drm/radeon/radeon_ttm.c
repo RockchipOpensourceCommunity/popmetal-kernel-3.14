@@ -205,9 +205,7 @@ static void radeon_evict_flags(struct ttm_buffer_object *bo,
 
 static int radeon_verify_access(struct ttm_buffer_object *bo, struct file *filp)
 {
-	struct radeon_bo *rbo = container_of(bo, struct radeon_bo, tbo);
-
-	return drm_vma_node_verify_access(&rbo->gem_base.vma_node, filp);
+	return 0;
 }
 
 static void radeon_move_null(struct ttm_buffer_object *bo,
@@ -742,7 +740,7 @@ int radeon_ttm_init(struct radeon_device *rdev)
 	}
 	DRM_INFO("radeon: %uM of GTT memory ready.\n",
 		 (unsigned)(rdev->mc.gtt_size / (1024 * 1024)));
-	rdev->mman.bdev.dev_mapping = rdev->ddev->dev_mapping;
+	rdev->mman.bdev.dev_mapping = rdev->ddev->anon_inode->i_mapping;
 
 	r = radeon_ttm_debugfs_init(rdev);
 	if (r) {

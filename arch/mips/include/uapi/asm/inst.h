@@ -73,6 +73,7 @@ enum spec2_op {
 enum spec3_op {
 	ext_op, dextm_op, dextu_op, dext_op,
 	ins_op, dinsm_op, dinsu_op, dins_op,
+	yield_op  = 0x09,
 	lx_op = 0x0a,
 	bshfl_op = 0x20,
 	dbshfl_op = 0x24,
@@ -118,7 +119,8 @@ enum bcop_op {
 enum cop0_coi_func {
 	tlbr_op	      = 0x01, tlbwi_op	    = 0x02,
 	tlbwr_op      = 0x06, tlbp_op	    = 0x08,
-	rfe_op	      = 0x10, eret_op	    = 0x18
+	rfe_op	      = 0x10, eret_op	    = 0x18,
+	wait_op       = 0x20,
 };
 
 /*
@@ -294,7 +296,9 @@ enum mm_32axf_minor_op {
 	mm_tlbwr_op = 0x0cd,
 	mm_jalrs_op = 0x13c,
 	mm_jalrshb_op = 0x17c,
+	mm_sync_op = 0x1ad,
 	mm_syscall_op = 0x22d,
+	mm_wait_op = 0x24d,
 	mm_eret_op = 0x3cd,
 };
 

@@ -394,7 +394,7 @@ static int _calc_rate(struct clk_hw *hw, struct tegra_clk_pll_freq_table *cfg,
 		      unsigned long rate, unsigned long parent_rate)
 {
 	struct tegra_clk_pll *pll = to_clk_pll(hw);
-	unsigned long cfreq;
+	unsigned long cfreq, vco_rate;
 	u32 p_div = 0;
 	int ret;
 
@@ -424,7 +424,8 @@ static int _calc_rate(struct clk_hw *hw, struct tegra_clk_pll_freq_table *cfg,
 	}
 
 	/* Raise VCO to guarantee 0.5% accuracy */
-	for (cfg->output_rate = rate; cfg->output_rate < 200 * cfreq;
+	vco_rate = max(200 * cfreq, pll->params->vco_min);
+	for (cfg->output_rate = rate; cfg->output_rate < vco_rate;
 	     cfg->output_rate <<= 1)
 		p_div++;
 
@@ -468,8 +469,8 @@ static void _update_pll_mnp(struct tegra_clk_pll *pll,
 		pll_override_writel(val, params->pmc_divp_reg, pll);
 
 		val = pll_override_readl(params->pmc_divnm_reg, pll);
-		val &= ~(divm_mask(pll) << div_nmp->override_divm_shift) |
-			~(divn_mask(pll) << div_nmp->override_divn_shift);
+		val &= ~((divm_mask(pll) << div_nmp->override_divm_shift) |
+			(divn_mask(pll) << div_nmp->override_divn_shift));
 		val |= (cfg->m << div_nmp->override_divm_shift) |
 			(cfg->n << div_nmp->override_divn_shift);
 		pll_override_writel(val, params->pmc_divnm_reg, pll);
@@ -605,6 +606,7 @@ static long clk_pll_round_rate(struct clk_hw *hw, unsigned long rate,
 {
 	struct tegra_clk_pll *pll = to_clk_pll(hw);
 	struct tegra_clk_pll_freq_table cfg;
+	u64 output_rate = *prate;
 
 	if (pll->params->flags & TEGRA_PLL_FIXED)
 		return pll->params->fixed_rate;
@@ -617,7 +619,10 @@ static long clk_pll_round_rate(struct clk_hw *hw, unsigned long rate,
 	    _calc_rate(hw, &cfg, rate, *prate))
 		return -EINVAL;
 
-	return cfg.output_rate;
+	output_rate *= cfg.n;
+	do_div(output_rate, cfg.m * _hw_to_p_div(hw, cfg.p));
+
+	return output_rate;
 }
 
 static unsigned long clk_pll_recalc_rate(struct clk_hw *hw,
@@ -791,7 +796,9 @@ const struct clk_ops tegra_clk_plle_ops = {
 	.enable = clk_plle_enable,
 };
 
-#if defined(CONFIG_ARCH_TEGRA_114_SOC) || defined(CONFIG_ARCH_TEGRA_124_SOC)
+#if defined(CONFIG_ARCH_TEGRA_114_SOC) || \
+    defined(CONFIG_ARCH_TEGRA_124_SOC) || \
+    defined(CONFIG_ARCH_TEGRA_132_SOC)
 
 static int _pll_fixed_mdiv(struct tegra_clk_pll_params *pll_params,
 			   unsigned long parent_rate)
@@ -904,6 +911,8 @@ static int _calc_dynamic_ramp_rate(struct clk_hw *hw,
 	p = DIV_ROUND_UP(pll->params->vco_min, rate);
 	cfg->m = _pll_fixed_mdiv(pll->params, parent_rate);
 	cfg->output_rate = rate * p;
+	if (cfg->output_rate > pll->params->vco_max)
+		cfg->output_rate = pll->params->vco_max;
 	cfg->n = cfg->output_rate * cfg->m / parent_rate;
 
 	p_div = _p_div_to_hw(hw, p);
@@ -912,8 +921,58 @@ static int _calc_dynamic_ramp_rate(struct clk_hw *hw,
 	else
 		cfg->p = p_div;
 
-	if (cfg->n > divn_max(pll) || cfg->output_rate > pll->params->vco_max)
+	if (cfg->n > divn_max(pll))
 		return -EINVAL;
+
+	return 0;
+}
+
+static int _calc_dynamic_ramp_rate_accurate(struct clk_hw *hw,
+				struct tegra_clk_pll_freq_table *cfg,
+				unsigned long rate, unsigned long parent_rate)
+{
+	struct tegra_clk_pll *pll = to_clk_pll(hw);
+	unsigned int cf, p_hw, max_err, n;
+	unsigned long target_vco_rate, output_rate;
+	int p_div, err;
+
+	if (!rate)
+		return -EINVAL;
+
+	cfg->m = _pll_fixed_mdiv(pll->params, parent_rate);
+	cf = parent_rate / cfg->m;
+	max_err = UINT_MAX;
+
+	p_div = DIV_ROUND_UP(pll->params->vco_min, rate);
+	p_hw = _p_div_to_hw(hw, p_div);
+	if (p_hw < 0)
+		return p_hw;
+
+	for (; p_hw <= divp_mask(pll); p_hw++) {
+		p_div = _hw_to_p_div(hw, p_hw);
+		if (p_div < 0)
+			break;
+
+		target_vco_rate = rate * p_div;
+		if (target_vco_rate > pll->params->vco_max)
+			continue;
+
+		n = DIV_ROUND_CLOSEST(target_vco_rate, cf);
+		if (n > divn_mask(pll))
+			continue;
+
+		output_rate = (cf * n) / p_div;
+		err = output_rate - rate;
+
+		if (abs(err) < max_err) {
+			cfg->p = p_hw;
+			cfg->n = n;
+			max_err = abs(err);
+		}
+
+		if (!err)
+			break;
+	}
 
 	return 0;
 }
@@ -926,8 +985,14 @@ static int _pll_ramp_calc_pll(struct clk_hw *hw,
 	int err = 0, p_div;
 
 	err = _get_table_rate(hw, cfg, rate, parent_rate);
-	if (err < 0)
-		err = _calc_dynamic_ramp_rate(hw, cfg, rate, parent_rate);
+	if (err < 0) {
+		if (pll->params->flags & TEGRA_PLL_ACCURATE)
+			err = _calc_dynamic_ramp_rate_accurate(hw, cfg, rate,
+							       parent_rate);
+		else
+			err = _calc_dynamic_ramp_rate(hw, cfg, rate,
+						      parent_rate);
+	}
 	else {
 		if (cfg->m != _pll_fixed_mdiv(pll->params, parent_rate)) {
 			WARN_ON(1);
@@ -1432,7 +1497,9 @@ struct clk *tegra_clk_register_plle(const char *name, const char *parent_name,
 	return clk;
 }
 
-#if defined(CONFIG_ARCH_TEGRA_114_SOC) || defined(CONFIG_ARCH_TEGRA_124_SOC)
+#if defined(CONFIG_ARCH_TEGRA_114_SOC) || \
+    defined(CONFIG_ARCH_TEGRA_124_SOC) || \
+    defined(CONFIG_ARCH_TEGRA_132_SOC)
 static const struct clk_ops tegra_clk_pllxc_ops = {
 	.is_enabled = clk_pll_is_enabled,
 	.enable = clk_pll_iddq_enable,
@@ -1730,7 +1797,7 @@ struct clk *tegra_clk_register_plle_tegra114(const char *name,
 }
 #endif
 
-#ifdef CONFIG_ARCH_TEGRA_124_SOC
+#if defined(CONFIG_ARCH_TEGRA_124_SOC) || defined(CONFIG_ARCH_TEGRA_132_SOC)
 static const struct clk_ops tegra_clk_pllss_ops = {
 	.is_enabled = clk_pll_is_enabled,
 	.enable = clk_pll_iddq_enable,
@@ -1762,7 +1829,7 @@ struct clk *tegra_clk_register_pllss(const char *name, const char *parent_name,
 		return ERR_PTR(-EINVAL);
 	}
 
-	pll_params->flags = TEGRA_PLL_HAS_LOCK_ENABLE | TEGRA_PLL_USE_LOCK;
+	pll_params->flags |= TEGRA_PLL_HAS_LOCK_ENABLE | TEGRA_PLL_USE_LOCK;
 	pll = _tegra_init_pll(clk_base, NULL, pll_params, lock);
 	if (IS_ERR(pll))
 		return ERR_CAST(pll);

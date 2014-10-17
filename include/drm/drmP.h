@@ -43,6 +43,7 @@
 #include <asm/current.h>
 #endif				/* __alpha__ */
 #include <linux/kernel.h>
+#include <linux/kref.h>
 #include <linux/miscdevice.h>
 #include <linux/fs.h>
 #include <linux/init.h>
@@ -82,6 +83,7 @@ struct drm_device;
 
 struct device_node;
 struct videomode;
+struct reservation_object;
 
 #include <drm/drm_os_linux.h>
 #include <drm/drm_hashtab.h>
@@ -959,6 +961,8 @@ struct drm_driver {
 	/* low-level interface used by drm_gem_prime_{import,export} */
 	int (*gem_prime_pin)(struct drm_gem_object *obj);
 	void (*gem_prime_unpin)(struct drm_gem_object *obj);
+	struct reservation_object * (*gem_prime_res_obj)(
+				struct drm_gem_object *obj);
 	struct sg_table *(*gem_prime_get_sg_table)(struct drm_gem_object *obj);
 	struct drm_gem_object *(*gem_prime_import_sg_table)(
 				struct drm_device *dev, size_t size,
@@ -1098,6 +1102,20 @@ struct drm_device {
 	char *devname;			/**< For /proc/interrupts */
 	int if_version;			/**< Highest interface version set */
 
+	/** \name Lifetime Management */
+	/*@{ */
+	struct kref ref;		/**< Object ref-count */
+	struct device *dev;		/**< Device structure of bus-device */
+	struct drm_driver *driver;	/**< DRM driver managing the device */
+	void *dev_private;		/**< DRM driver private data */
+	struct address_space *dev_mapping;	/**< Private addr-space just for the device */
+	struct drm_minor *control;		/**< Control node */
+	struct drm_minor *primary;		/**< Primary node */
+	struct drm_minor *render;		/**< Render node */
+	atomic_t unplugged;			/**< Flag whether dev is dead */
+	char *unique;				/**< unique name of the device */
+	/*@} */
+
 	/** \name Locks */
 	/*@{ */
 	spinlock_t count_lock;		/**< For inuse, drm_device::open_count, drm_device::buf_use */
@@ -1171,7 +1189,6 @@ struct drm_device {
 
 	struct drm_agp_head *agp;	/**< AGP data */
 
-	struct device *dev;             /**< Device structure */
 	struct pci_dev *pdev;		/**< PCI device structure */
 #ifdef __alpha__
 	struct pci_controller *hose;
@@ -1182,17 +1199,12 @@ struct drm_device {
 
 	struct drm_sg_mem *sg;	/**< Scatter gather memory */
 	unsigned int num_crtcs;                  /**< Number of CRTCs on this device */
-	void *dev_private;		/**< device private data */
-	struct address_space *dev_mapping;
+	struct inode *anon_inode;
 	struct drm_sigdata sigdata;	   /**< For block_all_signals */
 	sigset_t sigmask;
 
-	struct drm_driver *driver;
 	struct drm_local_map *agp_buffer_map;
 	unsigned int agp_buffer_token;
-	struct drm_minor *control;		/**< Control node for card */
-	struct drm_minor *primary;		/**< render type primary screen head */
-	struct drm_minor *render;		/**< render node for card */
 
         struct drm_mode_config mode_config;	/**< Current mode config */
 
@@ -1203,8 +1215,6 @@ struct drm_device {
 	struct drm_vma_offset_manager *vma_offset_manager;
 	/*@} */
 	int switch_power_state;
-
-	atomic_t unplugged; /* device has been unplugged or gone away */
 };
 
 #define DRM_SWITCH_POWER_ON 0
@@ -1661,9 +1671,15 @@ static __inline__ void drm_core_dropmap(struct drm_local_map *map)
 
 struct drm_device *drm_dev_alloc(struct drm_driver *driver,
 				 struct device *parent);
-void drm_dev_free(struct drm_device *dev);
+void drm_dev_ref(struct drm_device *dev);
+void drm_dev_unref(struct drm_device *dev);
 int drm_dev_register(struct drm_device *dev, unsigned long flags);
 void drm_dev_unregister(struct drm_device *dev);
+int drm_dev_set_unique(struct drm_device *dev, const char *fmt, ...);
+
+struct drm_minor *drm_minor_acquire(unsigned int minor_id);
+void drm_minor_release(struct drm_minor *minor);
+
 /*@}*/
 
 /* PCI section */

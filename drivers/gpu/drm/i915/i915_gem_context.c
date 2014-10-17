@@ -367,7 +367,7 @@ mi_set_context(struct intel_ring_buffer *ring,
 	 * explicitly, so we rely on the value at ring init, stored in
 	 * itlb_before_ctx_switch.
 	 */
-	if (IS_GEN6(ring->dev) && ring->itlb_before_ctx_switch) {
+	if (IS_GEN6(ring->dev)) {
 		ret = ring->flush(ring, I915_GEM_GPU_DOMAINS, 0);
 		if (ret)
 			return ret;
@@ -377,8 +377,8 @@ mi_set_context(struct intel_ring_buffer *ring,
 	if (ret)
 		return ret;
 
-	/* WaProgramMiArbOnOffAroundMiSetContext:ivb,vlv,hsw */
-	if (IS_GEN7(ring->dev))
+	/* WaProgramMiArbOnOffAroundMiSetContext:ivb,vlv,hsw,bdw */
+	if (INTEL_INFO(ring->dev)->gen >= 7)
 		intel_ring_emit(ring, MI_ARB_ON_OFF | MI_ARB_DISABLE);
 	else
 		intel_ring_emit(ring, MI_NOOP);
@@ -393,7 +393,7 @@ mi_set_context(struct intel_ring_buffer *ring,
 	/* w/a: MI_SET_CONTEXT must always be followed by MI_NOOP */
 	intel_ring_emit(ring, MI_NOOP);
 
-	if (IS_GEN7(ring->dev))
+	if (INTEL_INFO(ring->dev)->gen >= 7)
 		intel_ring_emit(ring, MI_ARB_ON_OFF | MI_ARB_ENABLE);
 	else
 		intel_ring_emit(ring, MI_NOOP);
@@ -486,6 +486,12 @@ static int do_switch(struct i915_hw_context *to)
 		/* obj is kept alive until the next request by its active ref */
 		i915_gem_object_unpin(from->obj);
 		i915_gem_context_unreference(from);
+	} else {
+		if (to->is_initialized == false) {
+			ret = i915_gem_render_state_init(ring);
+			if (ret)
+				DRM_ERROR("init render state: %d\n", ret);
+		}
 	}
 
 	i915_gem_context_reference(to);

@@ -89,6 +89,14 @@ config THERMAL_GOV_USER_SPACE
 	help
 	  Enable this to let the user space manage the platform thermals.
 
+config THERMAL_GOV_PID
+	bool
+	prompt "PID thermal governor"
+	depends on THERMAL
+	help
+	  This governor manages thermals based on output values of
+	  PID controller.
+
 config CPU_THERMAL
 	bool "generic cpu cooling support"
 	depends on CPU_FREQ
@@ -174,6 +182,31 @@ config ARMADA_THERMAL
 	help
 	  Enable this option if you want to have support for thermal management
 	  controller present in Armada 370 and Armada XP SoC.
+
+config TEGRA_SOCTHERM
+	bool
+
+config TEGRA124_SOCTHERM
+	bool "Tegra124 SOCTHERM thermal management"
+	depends on ARCH_TEGRA_124_SOC
+	select TEGRA_SOCTHERM
+	help
+	  Enable this option for integrated thermal management support on NVIDIA
+	  Tegra124 systems-on-chip. The driver supports four thermal zones
+	  (CPU, GPU, MEM, PLLX). Cooling devices can be bound to the thermal
+	  zones to manage temperatures. This option is also required for the
+	  emergency thermal reset (thermtrip) feature to function.
+
+config TEGRA132_SOCTHERM
+	bool "Tegra132 SOCTHERM thermal management"
+	depends on ARCH_TEGRA_132_SOC
+	select TEGRA_SOCTHERM
+	help
+	  Enable this option for integrated thermal management support on NVIDIA
+	  Tegra132 systems-on-chip. The driver supports four thermal zones
+	  (CPU, GPU, MEM, PLLX). Cooling devices can be bound to the thermal
+	  zones to manage temperatures. This option is also required for the
+	  emergency thermal reset (thermtrip) feature to function.
 
 config DB8500_CPUFREQ_COOLING
 	tristate "DB8500 cpufreq cooling"

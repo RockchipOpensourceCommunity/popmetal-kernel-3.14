@@ -25,7 +25,8 @@
 #include <linux/module.h>
 #include <linux/platform_device.h>
 #include <linux/io.h>
-#include <linux/tegra-ahb.h>
+
+#include <soc/tegra/ahb.h>
 
 #define DRV_NAME "tegra-ahb"
 
@@ -265,6 +266,7 @@ static int tegra_ahb_probe(struct platform_device *pdev)
 	ahb->dev = &pdev->dev;
 	platform_set_drvdata(pdev, ahb);
 	tegra_ahb_gizmo_init(ahb);
+	pr_info("Tegra AHB driver loaded\n");
 	return 0;
 }
 

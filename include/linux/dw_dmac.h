@@ -59,6 +59,8 @@ struct dw_dma_platform_data {
 	unsigned short	block_size;
 	unsigned char	nr_masters;
 	unsigned char	data_width[4];
+	struct clk_hw		*hw_clk;
+	struct clk_lookup	*lookup_clk;
 };
 
 /* bursts size */
@@ -110,5 +112,8 @@ void dw_dma_cyclic_stop(struct dma_chan *chan);
 dma_addr_t dw_dma_get_src_addr(struct dma_chan *chan);
 
 dma_addr_t dw_dma_get_dst_addr(struct dma_chan *chan);
+
+void *dw_priv_probe(struct device *dev, struct resource *mem, int irq, u64 mask);
+int dw_priv_remove(void *dma);
 
 #endif /* DW_DMAC_H */

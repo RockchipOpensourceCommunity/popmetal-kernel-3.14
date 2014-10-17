@@ -242,7 +242,7 @@ struct wm_coeff_ctl {
 static int wm_adsp_fw_get(struct snd_kcontrol *kcontrol,
 			  struct snd_ctl_elem_value *ucontrol)
 {
-	struct snd_soc_codec *codec = snd_kcontrol_chip(kcontrol);
+	struct snd_soc_codec *codec = snd_soc_kcontrol_codec(kcontrol);
 	struct soc_enum *e = (struct soc_enum *)kcontrol->private_value;
 	struct wm_adsp *adsp = snd_soc_codec_get_drvdata(codec);
 
@@ -254,7 +254,7 @@ static int wm_adsp_fw_get(struct snd_kcontrol *kcontrol,
 static int wm_adsp_fw_put(struct snd_kcontrol *kcontrol,
 			  struct snd_ctl_elem_value *ucontrol)
 {
-	struct snd_soc_codec *codec = snd_kcontrol_chip(kcontrol);
+	struct snd_soc_codec *codec = snd_soc_kcontrol_codec(kcontrol);
 	struct soc_enum *e = (struct soc_enum *)kcontrol->private_value;
 	struct wm_adsp *adsp = snd_soc_codec_get_drvdata(codec);
 
@@ -1368,7 +1368,7 @@ int wm_adsp1_event(struct snd_soc_dapm_widget *w,
 	int ret;
 	int val;
 
-	dsp->card = codec->card;
+	dsp->card = codec->component.card;
 
 	switch (event) {
 	case SND_SOC_DAPM_POST_PMU:
@@ -1603,7 +1603,7 @@ int wm_adsp2_early_event(struct snd_soc_dapm_widget *w,
 	struct wm_adsp *dsps = snd_soc_codec_get_drvdata(codec);
 	struct wm_adsp *dsp = &dsps[w->shift];
 
-	dsp->card = codec->card;
+	dsp->card = codec->component.card;
 
 	switch (event) {
 	case SND_SOC_DAPM_PRE_PMU:

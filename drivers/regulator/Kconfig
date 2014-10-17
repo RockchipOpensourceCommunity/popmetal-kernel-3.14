@@ -139,6 +139,13 @@ config REGULATOR_AS3722
 	  AS3722 PMIC. This will enable support for all the software
 	  controllable DCDC/LDO regulators.
 
+config REGULATOR_CROS_EC_TPS65090
+	tristate "Chromeos EC regulator"
+	depends on MFD_CROS_EC
+	help
+	  Provides simple access to TPS65090 behind Chromeos EC.  Presently
+	  only enables FET switch control.
+
 config REGULATOR_DA903X
 	tristate "Dialog Semiconductor DA9030/DA9034 regulators"
 	depends on PMIC_DA903X
@@ -406,12 +413,29 @@ config REGULATOR_PFUZE100
 	  Say y here to support the regulators found on the Freescale PFUZE100
 	  PMIC.
 
+config REGULATOR_PWM
+	tristate "PWM voltage regulator"
+	depends on PWM
+	help
+	  This driver supports PWM controlled voltage regulators. PWM
+	  duty cycle can increase or decrease the voltage.
+
 config REGULATOR_RC5T583
 	tristate "RICOH RC5T583 Power regulators"
 	depends on MFD_RC5T583
 	help
 	  Select this option to enable the power regulator of RICOH
 	  PMIC RC5T583.
+	  This driver supports the control of different power rails of device
+	  through regulator interface. The device supports multiple DCDC/LDO
+	  outputs which can be controlled by i2c communication.
+
+config REGULATOR_RK808
+	tristate "Rockchip RK808 Power regulators"
+	depends on MFD_RK808
+	help
+	  Select this option to enable the power regulator of ROCKCHIP
+	  PMIC RK808.
 	  This driver supports the control of different power rails of device
 	  through regulator interface. The device supports multiple DCDC/LDO
 	  outputs which can be controlled by i2c communication.

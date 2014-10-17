@@ -99,10 +99,20 @@ config SATA_AHCI_PLATFORM
 
 config AHCI_IMX
 	tristate "Freescale i.MX AHCI SATA support"
-	depends on SATA_AHCI_PLATFORM && MFD_SYSCON
+	depends on MFD_SYSCON
 	help
 	  This option enables support for the Freescale i.MX SoC's
 	  onboard AHCI SATA.
+
+	  If unsure, say N.
+
+config AHCI_QCOM
+	tristate "Qualcomm AHCI SATA support"
+	depends on ARCH_QCOM
+	help
+	  This option enables support for AHCI SATA controller
+	  integrated into Qualcomm ARM SoC chipsets. For more
+	  information please refer to http://www.qualcomm.com/chipsets.
 
 	  If unsure, say N.
 

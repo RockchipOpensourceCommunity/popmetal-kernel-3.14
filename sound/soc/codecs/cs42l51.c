@@ -73,7 +73,7 @@ static int cs42l51_fill_cache(struct snd_soc_codec *codec)
 static int cs42l51_get_chan_mix(struct snd_kcontrol *kcontrol,
 			struct snd_ctl_elem_value *ucontrol)
 {
-	struct snd_soc_codec *codec = snd_kcontrol_chip(kcontrol);
+	struct snd_soc_codec *codec = snd_soc_kcontrol_codec(kcontrol);
 	unsigned long value = snd_soc_read(codec, CS42L51_PCM_MIXER)&3;
 
 	switch (value) {
@@ -101,7 +101,7 @@ static int cs42l51_get_chan_mix(struct snd_kcontrol *kcontrol,
 static int cs42l51_set_chan_mix(struct snd_kcontrol *kcontrol,
 			struct snd_ctl_elem_value *ucontrol)
 {
-	struct snd_soc_codec *codec = snd_kcontrol_chip(kcontrol);
+	struct snd_soc_codec *codec = snd_soc_kcontrol_codec(kcontrol);
 	unsigned char val;
 
 	switch (ucontrol->value.integer.value[0]) {
@@ -505,7 +505,6 @@ static struct snd_soc_dai_driver cs42l51_dai = {
 
 static int cs42l51_probe(struct snd_soc_codec *codec)
 {
-	struct cs42l51_private *cs42l51 = snd_soc_codec_get_drvdata(codec);
 	int ret, reg;
 
 	ret = cs42l51_fill_cache(codec);
@@ -513,13 +512,6 @@ static int cs42l51_probe(struct snd_soc_codec *codec)
 		dev_err(codec->dev, "failed to fill register cache\n");
 		return ret;
 	}
-
-	ret = snd_soc_codec_set_cache_io(codec, 8, 8, cs42l51->control_type);
-	if (ret < 0) {
-		dev_err(codec->dev, "Failed to set cache I/O: %d\n", ret);
-		return ret;
-	}
-
 	/*
 	 * DAC configuration
 	 * - Use signal processor

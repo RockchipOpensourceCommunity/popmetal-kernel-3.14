@@ -608,7 +608,7 @@ static const struct soc_enum max98095_dai3_dac_filter_enum[] = {
 static int max98095_mic1pre_set(struct snd_kcontrol *kcontrol,
 				struct snd_ctl_elem_value *ucontrol)
 {
-	struct snd_soc_codec *codec = snd_kcontrol_chip(kcontrol);
+	struct snd_soc_codec *codec = snd_soc_kcontrol_codec(kcontrol);
 	struct max98095_priv *max98095 = snd_soc_codec_get_drvdata(codec);
 	unsigned int sel = ucontrol->value.integer.value[0];
 
@@ -622,7 +622,7 @@ static int max98095_mic1pre_set(struct snd_kcontrol *kcontrol,
 static int max98095_mic1pre_get(struct snd_kcontrol *kcontrol,
 				struct snd_ctl_elem_value *ucontrol)
 {
-	struct snd_soc_codec *codec = snd_kcontrol_chip(kcontrol);
+	struct snd_soc_codec *codec = snd_soc_kcontrol_codec(kcontrol);
 	struct max98095_priv *max98095 = snd_soc_codec_get_drvdata(codec);
 
 	ucontrol->value.integer.value[0] = max98095->mic1pre;
@@ -632,7 +632,7 @@ static int max98095_mic1pre_get(struct snd_kcontrol *kcontrol,
 static int max98095_mic2pre_set(struct snd_kcontrol *kcontrol,
 				struct snd_ctl_elem_value *ucontrol)
 {
-	struct snd_soc_codec *codec = snd_kcontrol_chip(kcontrol);
+	struct snd_soc_codec *codec = snd_soc_kcontrol_codec(kcontrol);
 	struct max98095_priv *max98095 = snd_soc_codec_get_drvdata(codec);
 	unsigned int sel = ucontrol->value.integer.value[0];
 
@@ -646,7 +646,7 @@ static int max98095_mic2pre_set(struct snd_kcontrol *kcontrol,
 static int max98095_mic2pre_get(struct snd_kcontrol *kcontrol,
 				struct snd_ctl_elem_value *ucontrol)
 {
-	struct snd_soc_codec *codec = snd_kcontrol_chip(kcontrol);
+	struct snd_soc_codec *codec = snd_soc_kcontrol_codec(kcontrol);
 	struct max98095_priv *max98095 = snd_soc_codec_get_drvdata(codec);
 
 	ucontrol->value.integer.value[0] = max98095->mic2pre;
@@ -1733,7 +1733,7 @@ static int max98095_get_eq_channel(const char *name)
 static int max98095_put_eq_enum(struct snd_kcontrol *kcontrol,
 				 struct snd_ctl_elem_value *ucontrol)
 {
-	struct snd_soc_codec *codec = snd_kcontrol_chip(kcontrol);
+	struct snd_soc_codec *codec = snd_soc_kcontrol_codec(kcontrol);
 	struct max98095_priv *max98095 = snd_soc_codec_get_drvdata(codec);
 	struct max98095_pdata *pdata = max98095->pdata;
 	int channel = max98095_get_eq_channel(kcontrol->id.name);
@@ -1797,7 +1797,7 @@ static int max98095_put_eq_enum(struct snd_kcontrol *kcontrol,
 static int max98095_get_eq_enum(struct snd_kcontrol *kcontrol,
 				 struct snd_ctl_elem_value *ucontrol)
 {
-	struct snd_soc_codec *codec = snd_kcontrol_chip(kcontrol);
+	struct snd_soc_codec *codec = snd_soc_kcontrol_codec(kcontrol);
 	struct max98095_priv *max98095 = snd_soc_codec_get_drvdata(codec);
 	int channel = max98095_get_eq_channel(kcontrol->id.name);
 	struct max98095_cdata *cdata;
@@ -1861,7 +1861,7 @@ static void max98095_handle_eq_pdata(struct snd_soc_codec *codec)
 
 	/* Now point the soc_enum to .texts array items */
 	max98095->eq_enum.texts = max98095->eq_texts;
-	max98095->eq_enum.max = max98095->eq_textcnt;
+	max98095->eq_enum.items = max98095->eq_textcnt;
 
 	ret = snd_soc_add_codec_controls(codec, controls, ARRAY_SIZE(controls));
 	if (ret != 0)
@@ -1887,7 +1887,7 @@ static int max98095_get_bq_channel(struct snd_soc_codec *codec,
 static int max98095_put_bq_enum(struct snd_kcontrol *kcontrol,
 				 struct snd_ctl_elem_value *ucontrol)
 {
-	struct snd_soc_codec *codec = snd_kcontrol_chip(kcontrol);
+	struct snd_soc_codec *codec = snd_soc_kcontrol_codec(kcontrol);
 	struct max98095_priv *max98095 = snd_soc_codec_get_drvdata(codec);
 	struct max98095_pdata *pdata = max98095->pdata;
 	int channel = max98095_get_bq_channel(codec, kcontrol->id.name);
@@ -1948,7 +1948,7 @@ static int max98095_put_bq_enum(struct snd_kcontrol *kcontrol,
 static int max98095_get_bq_enum(struct snd_kcontrol *kcontrol,
 				 struct snd_ctl_elem_value *ucontrol)
 {
-	struct snd_soc_codec *codec = snd_kcontrol_chip(kcontrol);
+	struct snd_soc_codec *codec = snd_soc_kcontrol_codec(kcontrol);
 	struct max98095_priv *max98095 = snd_soc_codec_get_drvdata(codec);
 	int channel = max98095_get_bq_channel(codec, kcontrol->id.name);
 	struct max98095_cdata *cdata;
@@ -2016,7 +2016,7 @@ static void max98095_handle_bq_pdata(struct snd_soc_codec *codec)
 
 	/* Now point the soc_enum to .texts array items */
 	max98095->bq_enum.texts = max98095->bq_texts;
-	max98095->bq_enum.max = max98095->bq_textcnt;
+	max98095->bq_enum.items = max98095->bq_textcnt;
 
 	ret = snd_soc_add_codec_controls(codec, controls, ARRAY_SIZE(controls));
 	if (ret != 0)
@@ -2233,12 +2233,6 @@ static int max98095_probe(struct snd_soc_codec *codec)
 	struct max98095_cdata *cdata;
 	struct i2c_client *client;
 	int ret = 0;
-
-	ret = snd_soc_codec_set_cache_io(codec, 8, 8, SND_SOC_REGMAP);
-	if (ret != 0) {
-		dev_err(codec->dev, "Failed to set cache I/O: %d\n", ret);
-		return ret;
-	}
 
 	/* reset the codec, the DSP core, and disable all interrupts */
 	max98095_reset(codec);

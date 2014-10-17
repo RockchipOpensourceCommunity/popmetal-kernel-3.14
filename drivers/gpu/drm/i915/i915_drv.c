@@ -58,13 +58,13 @@ module_param_named(powersave, i915_powersave, int, 0600);
 MODULE_PARM_DESC(powersave,
 		"Enable powersavings, fbc, downclocking, etc. (default: true)");
 
-int i915_semaphores __read_mostly = -1;
+int i915_semaphores __read_mostly = 1;
 module_param_named(semaphores, i915_semaphores, int, 0400);
 MODULE_PARM_DESC(semaphores,
-		"Use semaphores for inter-ring sync (default: -1 (use per-chip defaults))");
+		"Use semaphores for inter-ring sync (default: true)");
 
 int i915_enable_rc6 __read_mostly = -1;
-module_param_named(i915_enable_rc6, i915_enable_rc6, int, 0400);
+module_param_named(i915_enable_rc6, i915_enable_rc6, int, 0600);
 MODULE_PARM_DESC(i915_enable_rc6,
 		"Enable power-saving render C-state 6. "
 		"Different stages can be selected via bitmask values "
@@ -72,13 +72,13 @@ MODULE_PARM_DESC(i915_enable_rc6,
 		"For example, 3 would enable rc6 and deep rc6, and 7 would enable everything. "
 		"default: -1 (use per-chip default)");
 
-int i915_enable_fbc __read_mostly = -1;
+int i915_enable_fbc __read_mostly = 1;
 module_param_named(i915_enable_fbc, i915_enable_fbc, int, 0600);
 MODULE_PARM_DESC(i915_enable_fbc,
 		"Enable frame buffer compression for power savings "
-		"(default: -1 (use per-chip default))");
+		"(default: true)");
 
-unsigned int i915_lvds_downclock __read_mostly = 0;
+unsigned int i915_lvds_downclock __read_mostly = 1;
 module_param_named(lvds_downclock, i915_lvds_downclock, int, 0400);
 MODULE_PARM_DESC(lvds_downclock,
 		"Use panel (LVDS/eDP) downclocking for power savings "
@@ -113,7 +113,7 @@ MODULE_PARM_DESC(enable_hangcheck,
 		"WARNING: Disabling this can cause system wide hangs. "
 		"(default: true)");
 
-int i915_enable_ppgtt __read_mostly = -1;
+int i915_enable_ppgtt __read_mostly = 0;
 module_param_named(i915_enable_ppgtt, i915_enable_ppgtt, int, 0400);
 MODULE_PARM_DESC(i915_enable_ppgtt,
 		"Enable PPGTT (default: true)");
@@ -156,16 +156,36 @@ MODULE_PARM_DESC(prefault_disable,
 
 static struct drm_driver driver;
 
+#define GEN_DEFAULT_PIPEOFFSETS \
+	.pipe_offsets = { PIPE_A_OFFSET, PIPE_B_OFFSET, \
+			  PIPE_C_OFFSET, PIPE_EDP_OFFSET }, \
+	.trans_offsets = { TRANSCODER_A_OFFSET, TRANSCODER_B_OFFSET, \
+			   TRANSCODER_C_OFFSET, TRANSCODER_EDP_OFFSET }, \
+	.dpll_offsets = { DPLL_A_OFFSET, DPLL_B_OFFSET }, \
+	.dpll_md_offsets = { DPLL_A_MD_OFFSET, DPLL_B_MD_OFFSET }, \
+	.palette_offsets = { PALETTE_A_OFFSET, PALETTE_B_OFFSET }
+
+
+#define CURSOR_OFFSETS \
+	.cursor_offsets = { CURSOR_A_OFFSET, CURSOR_B_OFFSET, CHV_CURSOR_C_OFFSET }
+
+#define IVB_CURSOR_OFFSETS \
+	.cursor_offsets = { CURSOR_A_OFFSET, IVB_CURSOR_B_OFFSET, IVB_CURSOR_C_OFFSET }
+
 static const struct intel_device_info intel_i830_info = {
 	.gen = 2, .is_mobile = 1, .cursor_needs_physical = 1, .num_pipes = 2,
 	.has_overlay = 1, .overlay_needs_physical = 1,
 	.ring_mask = RENDER_RING,
+	GEN_DEFAULT_PIPEOFFSETS,
+	CURSOR_OFFSETS,
 };
 
 static const struct intel_device_info intel_845g_info = {
 	.gen = 2, .num_pipes = 1,
 	.has_overlay = 1, .overlay_needs_physical = 1,
 	.ring_mask = RENDER_RING,
+	GEN_DEFAULT_PIPEOFFSETS,
+	CURSOR_OFFSETS,
 };
 
 static const struct intel_device_info intel_i85x_info = {
@@ -174,18 +194,24 @@ static const struct intel_device_info intel_i85x_info = {
 	.has_overlay = 1, .overlay_needs_physical = 1,
 	.has_fbc = 1,
 	.ring_mask = RENDER_RING,
+	GEN_DEFAULT_PIPEOFFSETS,
+	CURSOR_OFFSETS,
 };
 
 static const struct intel_device_info intel_i865g_info = {
 	.gen = 2, .num_pipes = 1,
 	.has_overlay = 1, .overlay_needs_physical = 1,
 	.ring_mask = RENDER_RING,
+	GEN_DEFAULT_PIPEOFFSETS,
+	CURSOR_OFFSETS,
 };
 
 static const struct intel_device_info intel_i915g_info = {
 	.gen = 3, .is_i915g = 1, .cursor_needs_physical = 1, .num_pipes = 2,
 	.has_overlay = 1, .overlay_needs_physical = 1,
 	.ring_mask = RENDER_RING,
+	GEN_DEFAULT_PIPEOFFSETS,
+	CURSOR_OFFSETS,
 };
 static const struct intel_device_info intel_i915gm_info = {
 	.gen = 3, .is_mobile = 1, .num_pipes = 2,
@@ -194,11 +220,15 @@ static const struct intel_device_info intel_i915gm_info = {
 	.supports_tv = 1,
 	.has_fbc = 1,
 	.ring_mask = RENDER_RING,
+	GEN_DEFAULT_PIPEOFFSETS,
+	CURSOR_OFFSETS,
 };
 static const struct intel_device_info intel_i945g_info = {
 	.gen = 3, .has_hotplug = 1, .cursor_needs_physical = 1, .num_pipes = 2,
 	.has_overlay = 1, .overlay_needs_physical = 1,
 	.ring_mask = RENDER_RING,
+	GEN_DEFAULT_PIPEOFFSETS,
+	CURSOR_OFFSETS,
 };
 static const struct intel_device_info intel_i945gm_info = {
 	.gen = 3, .is_i945gm = 1, .is_mobile = 1, .num_pipes = 2,
@@ -207,6 +237,8 @@ static const struct intel_device_info intel_i945gm_info = {
 	.supports_tv = 1,
 	.has_fbc = 1,
 	.ring_mask = RENDER_RING,
+	GEN_DEFAULT_PIPEOFFSETS,
+	CURSOR_OFFSETS,
 };
 
 static const struct intel_device_info intel_i965g_info = {
@@ -214,6 +246,8 @@ static const struct intel_device_info intel_i965g_info = {
 	.has_hotplug = 1,
 	.has_overlay = 1,
 	.ring_mask = RENDER_RING,
+	GEN_DEFAULT_PIPEOFFSETS,
+	CURSOR_OFFSETS,
 };
 
 static const struct intel_device_info intel_i965gm_info = {
@@ -222,6 +256,8 @@ static const struct intel_device_info intel_i965gm_info = {
 	.has_overlay = 1,
 	.supports_tv = 1,
 	.ring_mask = RENDER_RING,
+	GEN_DEFAULT_PIPEOFFSETS,
+	CURSOR_OFFSETS,
 };
 
 static const struct intel_device_info intel_g33_info = {
@@ -229,12 +265,16 @@ static const struct intel_device_info intel_g33_info = {
 	.need_gfx_hws = 1, .has_hotplug = 1,
 	.has_overlay = 1,
 	.ring_mask = RENDER_RING,
+	GEN_DEFAULT_PIPEOFFSETS,
+	CURSOR_OFFSETS,
 };
 
 static const struct intel_device_info intel_g45_info = {
 	.gen = 4, .is_g4x = 1, .need_gfx_hws = 1, .num_pipes = 2,
 	.has_pipe_cxsr = 1, .has_hotplug = 1,
 	.ring_mask = RENDER_RING | BSD_RING,
+	GEN_DEFAULT_PIPEOFFSETS,
+	CURSOR_OFFSETS,
 };
 
 static const struct intel_device_info intel_gm45_info = {
@@ -243,18 +283,24 @@ static const struct intel_device_info intel_gm45_info = {
 	.has_pipe_cxsr = 1, .has_hotplug = 1,
 	.supports_tv = 1,
 	.ring_mask = RENDER_RING | BSD_RING,
+	GEN_DEFAULT_PIPEOFFSETS,
+	CURSOR_OFFSETS,
 };
 
 static const struct intel_device_info intel_pineview_info = {
 	.gen = 3, .is_g33 = 1, .is_pineview = 1, .is_mobile = 1, .num_pipes = 2,
 	.need_gfx_hws = 1, .has_hotplug = 1,
 	.has_overlay = 1,
+	GEN_DEFAULT_PIPEOFFSETS,
+	CURSOR_OFFSETS,
 };
 
 static const struct intel_device_info intel_ironlake_d_info = {
 	.gen = 5, .num_pipes = 2,
 	.need_gfx_hws = 1, .has_hotplug = 1,
 	.ring_mask = RENDER_RING | BSD_RING,
+	GEN_DEFAULT_PIPEOFFSETS,
+	CURSOR_OFFSETS,
 };
 
 static const struct intel_device_info intel_ironlake_m_info = {
@@ -262,6 +308,8 @@ static const struct intel_device_info intel_ironlake_m_info = {
 	.need_gfx_hws = 1, .has_hotplug = 1,
 	.has_fbc = 1,
 	.ring_mask = RENDER_RING | BSD_RING,
+	GEN_DEFAULT_PIPEOFFSETS,
+	CURSOR_OFFSETS,
 };
 
 static const struct intel_device_info intel_sandybridge_d_info = {
@@ -270,6 +318,8 @@ static const struct intel_device_info intel_sandybridge_d_info = {
 	.has_fbc = 1,
 	.ring_mask = RENDER_RING | BSD_RING | BLT_RING,
 	.has_llc = 1,
+	GEN_DEFAULT_PIPEOFFSETS,
+	CURSOR_OFFSETS,
 };
 
 static const struct intel_device_info intel_sandybridge_m_info = {
@@ -278,6 +328,8 @@ static const struct intel_device_info intel_sandybridge_m_info = {
 	.has_fbc = 1,
 	.ring_mask = RENDER_RING | BSD_RING | BLT_RING,
 	.has_llc = 1,
+	GEN_DEFAULT_PIPEOFFSETS,
+	CURSOR_OFFSETS,
 };
 
 #define GEN7_FEATURES  \
@@ -290,18 +342,24 @@ static const struct intel_device_info intel_sandybridge_m_info = {
 static const struct intel_device_info intel_ivybridge_d_info = {
 	GEN7_FEATURES,
 	.is_ivybridge = 1,
+	GEN_DEFAULT_PIPEOFFSETS,
+	IVB_CURSOR_OFFSETS,
 };
 
 static const struct intel_device_info intel_ivybridge_m_info = {
 	GEN7_FEATURES,
 	.is_ivybridge = 1,
 	.is_mobile = 1,
+	GEN_DEFAULT_PIPEOFFSETS,
+	IVB_CURSOR_OFFSETS,
 };
 
 static const struct intel_device_info intel_ivybridge_q_info = {
 	GEN7_FEATURES,
 	.is_ivybridge = 1,
 	.num_pipes = 0, /* legal, last one wins */
+	GEN_DEFAULT_PIPEOFFSETS,
+	IVB_CURSOR_OFFSETS,
 };
 
 static const struct intel_device_info intel_valleyview_m_info = {
@@ -312,6 +370,8 @@ static const struct intel_device_info intel_valleyview_m_info = {
 	.display_mmio_offset = VLV_DISPLAY_BASE,
 	.has_fbc = 0, /* legal, last one wins */
 	.has_llc = 0, /* legal, last one wins */
+	GEN_DEFAULT_PIPEOFFSETS,
+	CURSOR_OFFSETS,
 };
 
 static const struct intel_device_info intel_valleyview_d_info = {
@@ -321,6 +381,8 @@ static const struct intel_device_info intel_valleyview_d_info = {
 	.display_mmio_offset = VLV_DISPLAY_BASE,
 	.has_fbc = 0, /* legal, last one wins */
 	.has_llc = 0, /* legal, last one wins */
+	GEN_DEFAULT_PIPEOFFSETS,
+	CURSOR_OFFSETS,
 };
 
 static const struct intel_device_info intel_haswell_d_info = {
@@ -329,6 +391,8 @@ static const struct intel_device_info intel_haswell_d_info = {
 	.has_ddi = 1,
 	.has_fpga_dbg = 1,
 	.ring_mask = RENDER_RING | BSD_RING | BLT_RING | VEBOX_RING,
+	GEN_DEFAULT_PIPEOFFSETS,
+	IVB_CURSOR_OFFSETS,
 };
 
 static const struct intel_device_info intel_haswell_m_info = {
@@ -338,6 +402,8 @@ static const struct intel_device_info intel_haswell_m_info = {
 	.has_ddi = 1,
 	.has_fpga_dbg = 1,
 	.ring_mask = RENDER_RING | BSD_RING | BLT_RING | VEBOX_RING,
+	GEN_DEFAULT_PIPEOFFSETS,
+	IVB_CURSOR_OFFSETS,
 };
 
 static const struct intel_device_info intel_broadwell_d_info = {
@@ -346,6 +412,8 @@ static const struct intel_device_info intel_broadwell_d_info = {
 	.ring_mask = RENDER_RING | BSD_RING | BLT_RING | VEBOX_RING,
 	.has_llc = 1,
 	.has_ddi = 1,
+	GEN_DEFAULT_PIPEOFFSETS,
+	IVB_CURSOR_OFFSETS,
 };
 
 static const struct intel_device_info intel_broadwell_m_info = {
@@ -354,6 +422,8 @@ static const struct intel_device_info intel_broadwell_m_info = {
 	.ring_mask = RENDER_RING | BSD_RING | BLT_RING | VEBOX_RING,
 	.has_llc = 1,
 	.has_ddi = 1,
+	GEN_DEFAULT_PIPEOFFSETS,
+	IVB_CURSOR_OFFSETS,
 };
 
 /*
@@ -476,10 +546,8 @@ bool i915_semaphore_is_enabled(struct drm_device *dev)
 		return false;
 
 	/* Until we get further testing... */
-	if (IS_GEN8(dev)) {
-		WARN_ON(!i915_preliminary_hw_support);
+	if (IS_GEN8(dev))
 		return false;
-	}
 
 	if (i915_semaphores >= 0)
 		return i915_semaphores;
@@ -544,6 +612,9 @@ static int i915_drm_freeze(struct drm_device *dev)
 	i915_gem_suspend_gtt_mappings(dev);
 
 	i915_save_state(dev);
+
+	if (IS_VALLEYVIEW(dev))
+		vlv_set_power_well(dev_priv, 0xcfcf);
 
 	intel_opregion_fini(dev);
 
@@ -631,6 +702,11 @@ static int __i915_drm_thaw(struct drm_device *dev, bool restore_gtt_mappings)
 	}
 
 	intel_power_domains_init_hw(dev);
+
+	if (IS_VALLEYVIEW(dev)) {
+		vlv_set_power_well(dev_priv, 0xcfcf);
+		vlv_set_power_well(dev_priv, 0xf);
+	}
 
 	i915_restore_state(dev);
 	intel_opregion_setup(dev);
@@ -802,6 +878,17 @@ int i915_reset(struct drm_device *dev)
 
 		drm_irq_uninstall(dev);
 		drm_irq_install(dev);
+
+		/* rps/rc6 re-init is necessary to restore state lost after the
+		 * reset and the re-install of drm irq. Skip for ironlake per
+		 * previous concerns that it doesn't respond well to some forms
+		 * of re-init after reset. */
+		if (INTEL_INFO(dev)->gen > 5) {
+			mutex_lock(&dev->struct_mutex);
+			intel_enable_gt_powersave(dev);
+			mutex_unlock(&dev->struct_mutex);
+		}
+
 		intel_hpd_init(dev);
 	} else {
 		mutex_unlock(&dev->struct_mutex);
@@ -810,10 +897,50 @@ int i915_reset(struct drm_device *dev)
 	return 0;
 }
 
+static ssize_t
+set_i2c_mutex(struct device* dev, struct device_attribute* attr, const char* buf, size_t count)
+{
+	struct pci_dev* pdev = to_pci_dev(dev);
+	struct drm_device* drm_dev = pci_get_drvdata(pdev);
+	struct drm_i915_private* p = drm_dev->dev_private;
+	u8 status;
+
+	if (kstrtou8(buf, 10, &status)) {
+		count = -EINVAL;
+		goto done;
+	}
+
+	if (status) {
+		if (mutex_trylock(&p->gmbus_mutex)) {
+			goto done;
+		} else {
+			DRM_ERROR("Could not lock I2C mutex\n");
+			count = -EBUSY;
+			goto done;
+		}
+	} else {
+		mutex_unlock(&p->gmbus_mutex);
+	}
+done:
+	return count;
+}
+
+static DEVICE_ATTR(i2c_mutex, S_IRUGO | S_IWUSR, NULL, set_i2c_mutex);
+
+static struct attribute* set_mutex_ctrl_attributes[] = {
+	&dev_attr_i2c_mutex.attr,
+	NULL
+};
+
+static const struct attribute_group mutex_ctrl_group = {
+	.attrs = set_mutex_ctrl_attributes
+};
+
 static int i915_pci_probe(struct pci_dev *pdev, const struct pci_device_id *ent)
 {
 	struct intel_device_info *intel_info =
 		(struct intel_device_info *) ent->driver_data;
+	int ret;
 
 	if (IS_PRELIMINARY_HW(intel_info) && !i915_preliminary_hw_support) {
 		DRM_INFO("This hardware requires preliminary hardware support.\n"
@@ -831,7 +958,11 @@ static int i915_pci_probe(struct pci_dev *pdev, const struct pci_device_id *ent)
 
 	driver.driver_features &= ~(DRIVER_USE_AGP);
 
-	return drm_get_pci_dev(pdev, ent, &driver);
+	ret = drm_get_pci_dev(pdev, ent, &driver);
+	if (ret == 0)
+		ret = sysfs_create_group(&pdev->dev.kobj, &mutex_ctrl_group);
+
+	return ret;
 }
 
 static void

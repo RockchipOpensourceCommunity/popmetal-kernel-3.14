@@ -26,10 +26,10 @@
 #include <xen/xen.h>
 #include <asm/xen/hypervisor.h>
 
-#define ARCH_HAS_DMA_GET_REQUIRED_MASK
-
 #define DMA_ERROR_CODE	(~(dma_addr_t)0)
 extern struct dma_map_ops *dma_ops;
+extern struct dma_map_ops coherent_swiotlb_dma_ops;
+extern struct dma_map_ops noncoherent_swiotlb_dma_ops;
 
 static inline struct dma_map_ops *__generic_dma_ops(struct device *dev)
 {
@@ -45,6 +45,11 @@ static inline struct dma_map_ops *get_dma_ops(struct device *dev)
 		return xen_dma_ops;
 	else
 		return __generic_dma_ops(dev);
+}
+
+static inline void set_dma_ops(struct device *dev, struct dma_map_ops *ops)
+{
+	dev->archdata.dma_ops = ops;
 }
 
 #include <asm-generic/dma-mapping-common.h>
@@ -122,6 +127,22 @@ static inline void dma_free_attrs(struct device *dev, size_t size,
 
 	debug_dma_free_coherent(dev, size, vaddr, dev_addr);
 	ops->free(dev, size, vaddr, dev_addr, attrs);
+}
+
+static inline void *dma_alloc_writecombine(struct device *dev, size_t size,
+				       dma_addr_t *dma_handle, gfp_t flag)
+{
+	DEFINE_DMA_ATTRS(attrs);
+	dma_set_attr(DMA_ATTR_WRITE_COMBINE, &attrs);
+	return dma_alloc_attrs(dev, size, dma_handle, flag, &attrs);
+}
+
+static inline void dma_free_writecombine(struct device *dev, size_t size,
+				     void *cpu_addr, dma_addr_t dma_handle)
+{
+	DEFINE_DMA_ATTRS(attrs);
+	dma_set_attr(DMA_ATTR_WRITE_COMBINE, &attrs);
+	return dma_free_attrs(dev, size, cpu_addr, dma_handle, &attrs);
 }
 
 /*

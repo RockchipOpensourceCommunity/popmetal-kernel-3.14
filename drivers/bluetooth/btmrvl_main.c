@@ -24,6 +24,7 @@
 #include <net/bluetooth/hci_core.h>
 
 #include "btmrvl_drv.h"
+#include "btmrvl_sdio.h"
 
 #define VERSION "1.0"
 
@@ -59,12 +60,13 @@ bool btmrvl_check_evtpkt(struct btmrvl_private *priv, struct sk_buff *skb)
 			priv->btmrvl_dev.sendcmdflag = false;
 			priv->adapter->cmd_complete = true;
 			wake_up_interruptible(&priv->adapter->cmd_wait_q);
-		}
 
-		if (hci_opcode_ogf(opcode) == 0x3F) {
-			BT_DBG("vendor event skipped: opcode=%#4.4x", opcode);
-			kfree_skb(skb);
-			return false;
+			if (hci_opcode_ogf(opcode) == 0x3F) {
+				BT_DBG("vendor event skipped: opcode=%#4.4x",
+				       opcode);
+				kfree_skb(skb);
+				return false;
+			}
 		}
 	}
 
@@ -112,6 +114,7 @@ int btmrvl_process_event(struct btmrvl_private *priv, struct sk_buff *skb)
 			adapter->hs_state = HS_ACTIVATED;
 			if (adapter->psmode)
 				adapter->ps_state = PS_SLEEP;
+			wake_up_interruptible(&adapter->event_hs_wait_q);
 			BT_DBG("HS ACTIVATED!");
 		} else {
 			BT_DBG("HS Enable failed");
@@ -212,6 +215,23 @@ int btmrvl_send_module_cfg_cmd(struct btmrvl_private *priv, int subcmd)
 }
 EXPORT_SYMBOL_GPL(btmrvl_send_module_cfg_cmd);
 
+int btmrvl_pscan_window_reporting(struct btmrvl_private *priv, u8 subcmd)
+{
+	struct btmrvl_sdio_card *card = priv->btmrvl_dev.card;
+	int ret;
+
+	if (!card->support_pscan_win_report)
+		return 0;
+
+	ret = btmrvl_send_sync_cmd(priv, BT_CMD_PSCAN_WIN_REPORT_ENABLE,
+				   &subcmd, 1);
+	if (ret)
+		BT_ERR("PSCAN_WIN_REPORT_ENABLE command failed: %#x", ret);
+
+	return ret;
+}
+EXPORT_SYMBOL_GPL(btmrvl_pscan_window_reporting);
+
 int btmrvl_send_hscfg_cmd(struct btmrvl_private *priv)
 {
 	int ret;
@@ -251,11 +271,31 @@ EXPORT_SYMBOL_GPL(btmrvl_enable_ps);
 
 int btmrvl_enable_hs(struct btmrvl_private *priv)
 {
+	struct btmrvl_adapter *adapter = priv->adapter;
 	int ret;
 
 	ret = btmrvl_send_sync_cmd(priv, BT_CMD_HOST_SLEEP_ENABLE, NULL, 0);
-	if (ret)
+	if (ret) {
 		BT_ERR("Host sleep enable command failed\n");
+		return ret;
+	}
+
+	ret = wait_event_interruptible_timeout(adapter->event_hs_wait_q,
+					       adapter->hs_state,
+			msecs_to_jiffies(WAIT_UNTIL_HS_STATE_CHANGED));
+	if (ret < 0) {
+		BT_ERR("event_hs_wait_q terminated (%d): %d,%d,%d",
+		       ret, adapter->hs_state, adapter->ps_state,
+		       adapter->wakeup_tries);
+	} else if (!ret) {
+		BT_ERR("hs_enable timeout: %d,%d,%d", adapter->hs_state,
+		       adapter->ps_state, adapter->wakeup_tries);
+		ret = -ETIMEDOUT;
+	} else {
+		BT_DBG("host sleep enabled: %d,%d,%d", adapter->hs_state,
+		       adapter->ps_state, adapter->wakeup_tries);
+		ret = 0;
+	}
 
 	return ret;
 }
@@ -336,17 +376,34 @@ static int btmrvl_tx_pkt(struct btmrvl_private *priv, struct sk_buff *skb)
 
 static void btmrvl_init_adapter(struct btmrvl_private *priv)
 {
+	int buf_size;
+
 	skb_queue_head_init(&priv->adapter->tx_queue);
 
 	priv->adapter->ps_state = PS_AWAKE;
 
+	buf_size = ALIGN_SZ(SDIO_BLOCK_SIZE, BTSDIO_DMA_ALIGN);
+	priv->adapter->hw_regs_buf = kzalloc(buf_size, GFP_KERNEL);
+	if (!priv->adapter->hw_regs_buf) {
+		priv->adapter->hw_regs = NULL;
+		BT_ERR("Unable to allocate buffer for hw_regs.");
+	} else {
+		priv->adapter->hw_regs =
+			(u8 *)ALIGN_ADDR(priv->adapter->hw_regs_buf,
+					 BTSDIO_DMA_ALIGN);
+		BT_DBG("hw_regs_buf=%p hw_regs=%p",
+		       priv->adapter->hw_regs_buf, priv->adapter->hw_regs);
+	}
+
 	init_waitqueue_head(&priv->adapter->cmd_wait_q);
+	init_waitqueue_head(&priv->adapter->event_hs_wait_q);
 }
 
 static void btmrvl_free_adapter(struct btmrvl_private *priv)
 {
 	skb_queue_purge(&priv->adapter->tx_queue);
 
+	kfree(priv->adapter->hw_regs_buf);
 	kfree(priv->adapter);
 
 	priv->adapter = NULL;
@@ -355,6 +412,11 @@ static void btmrvl_free_adapter(struct btmrvl_private *priv)
 static int btmrvl_send_frame(struct hci_dev *hdev, struct sk_buff *skb)
 {
 	struct btmrvl_private *priv = hci_get_drvdata(hdev);
+
+	if (priv->adapter->is_suspending || priv->adapter->is_suspended) {
+		BT_ERR("%s: Device is suspending or suspended", __func__);
+		return -EBUSY;
+	}
 
 	BT_DBG("type=%d, len=%d", skb->pkt_type, skb->len);
 
@@ -381,7 +443,8 @@ static int btmrvl_send_frame(struct hci_dev *hdev, struct sk_buff *skb)
 
 	skb_queue_tail(&priv->adapter->tx_queue, skb);
 
-	wake_up_interruptible(&priv->main_thread.wait_q);
+	if (!priv->adapter->is_suspended)
+		wake_up_interruptible(&priv->main_thread.wait_q);
 
 	return 0;
 }
@@ -471,10 +534,12 @@ static int btmrvl_setup(struct hci_dev *hdev)
 
 	btmrvl_cal_data_dt(priv);
 
+	btmrvl_pscan_window_reporting(priv, 0x01);
+
 	priv->btmrvl_dev.psmode = 1;
 	btmrvl_enable_ps(priv);
 
-	priv->btmrvl_dev.gpio_gap = 0xffff;
+	priv->btmrvl_dev.gpio_gap = 0xfffe;
 	btmrvl_send_hscfg_cmd(priv);
 
 	return 0;
@@ -536,7 +601,8 @@ static int btmrvl_service_main_thread(void *data)
 		if (adapter->ps_state == PS_SLEEP)
 			continue;
 
-		if (!priv->btmrvl_dev.tx_dnld_rdy)
+		if (!priv->btmrvl_dev.tx_dnld_rdy ||
+		    priv->adapter->is_suspended)
 			continue;
 
 		skb = skb_dequeue(&adapter->tx_queue);
@@ -627,11 +693,16 @@ struct btmrvl_private *btmrvl_add_card(void *card)
 	init_waitqueue_head(&priv->main_thread.wait_q);
 	priv->main_thread.task = kthread_run(btmrvl_service_main_thread,
 				&priv->main_thread, "btmrvl_main_service");
+	if (IS_ERR(priv->main_thread.task))
+		goto err_thread;
 
 	priv->btmrvl_dev.card = card;
 	priv->btmrvl_dev.tx_dnld_rdy = true;
 
 	return priv;
+
+err_thread:
+	btmrvl_free_adapter(priv);
 
 err_adapter:
 	kfree(priv);
@@ -648,6 +719,7 @@ int btmrvl_remove_card(struct btmrvl_private *priv)
 	hdev = priv->btmrvl_dev.hcidev;
 
 	wake_up_interruptible(&priv->adapter->cmd_wait_q);
+	wake_up_interruptible(&priv->adapter->event_hs_wait_q);
 
 	kthread_stop(priv->main_thread.task);
 

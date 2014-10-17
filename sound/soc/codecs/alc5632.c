@@ -1053,15 +1053,6 @@ static int alc5632_resume(struct snd_soc_codec *codec)
 static int alc5632_probe(struct snd_soc_codec *codec)
 {
 	struct alc5632_priv *alc5632 = snd_soc_codec_get_drvdata(codec);
-	int ret;
-
-	codec->control_data = alc5632->regmap;
-
-	ret = snd_soc_codec_set_cache_io(codec, 8, 16, SND_SOC_REGMAP);
-	if (ret != 0) {
-		dev_err(codec->dev, "Failed to set cache I/O: %d\n", ret);
-		return ret;
-	}
 
 	/* power on device  */
 	alc5632_set_bias_level(codec, SND_SOC_BIAS_STANDBY);
@@ -1075,7 +1066,7 @@ static int alc5632_probe(struct snd_soc_codec *codec)
 		return -EINVAL;
 	}
 
-	return ret;
+	return 0;
 }
 
 /* power down chip */

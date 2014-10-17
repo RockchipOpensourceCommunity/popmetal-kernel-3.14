@@ -853,6 +853,7 @@ int acpi_dev_suspend_late(struct device *dev)
 	struct acpi_device *adev = ACPI_COMPANION(dev);
 	u32 target_state;
 	bool wakeup;
+	bool can_wakeup;
 	int error;
 
 	if (!adev)
@@ -860,12 +861,19 @@ int acpi_dev_suspend_late(struct device *dev)
 
 	target_state = acpi_target_system_state();
 	wakeup = device_may_wakeup(dev);
-	error = __acpi_device_sleep_wake(adev, target_state, wakeup);
-	if (wakeup && error)
-		return error;
+	can_wakeup = acpi_device_can_wakeup(adev);
+
+	if (can_wakeup) {
+		error = __acpi_device_sleep_wake(adev, target_state, wakeup);
+		if (wakeup && error)
+			return error;
+	} else if (wakeup) {
+		dev_warn(dev,
+			 "device is not wakeup-capable, not enabling wakeup\n");
+	}
 
 	error = acpi_dev_pm_low_power(dev, adev, target_state);
-	if (error)
+	if (error && can_wakeup)
 		__acpi_device_sleep_wake(adev, ACPI_STATE_UNKNOWN, false);
 
 	return error;
@@ -978,6 +986,11 @@ int acpi_dev_pm_attach(struct device *dev, bool power_on)
 	if (!adev)
 		return -ENODEV;
 
+	if (!strcmp(dev_name(dev), "80860F28:00")) {
+		dev_info(dev, "Skipping ACPI power domain attach\n");
+		return -ENODEV;
+	}
+
 	if (dev->pm_domain)
 		return -EEXIST;
 
@@ -987,6 +1000,8 @@ int acpi_dev_pm_attach(struct device *dev, bool power_on)
 		acpi_dev_pm_full_power(adev);
 		__acpi_device_run_wake(adev, false);
 	}
+
+	dev->pm_domain->detach = acpi_dev_pm_detach;
 	return 0;
 }
 EXPORT_SYMBOL_GPL(acpi_dev_pm_attach);

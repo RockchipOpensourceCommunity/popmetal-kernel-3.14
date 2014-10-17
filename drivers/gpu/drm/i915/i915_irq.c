@@ -214,6 +214,46 @@ static bool ivb_can_enable_err_int(struct drm_device *dev)
 	return true;
 }
 
+/**
+  * bdw_update_pm_irq - update GT interrupt 2
+  * @dev_priv: driver private
+  * @interrupt_mask: mask of interrupt bits to update
+  * @enabled_irq_mask: mask of interrupt bits to enable
+  *
+  * Copied from the snb function, updated with relevant register offsets
+  */
+static void bdw_update_pm_irq(struct drm_i915_private *dev_priv,
+			      uint32_t interrupt_mask,
+			      uint32_t enabled_irq_mask)
+{
+	uint32_t new_val;
+
+	assert_spin_locked(&dev_priv->irq_lock);
+
+	if (WARN_ON(dev_priv->pc8.irqs_disabled))
+		return;
+
+	new_val = dev_priv->pm_irq_mask;
+	new_val &= ~interrupt_mask;
+	new_val |= (~enabled_irq_mask & interrupt_mask);
+
+	if (new_val != dev_priv->pm_irq_mask) {
+		dev_priv->pm_irq_mask = new_val;
+		I915_WRITE(GEN8_GT_IMR(2), dev_priv->pm_irq_mask);
+		POSTING_READ(GEN8_GT_IMR(2));
+	}
+}
+
+void bdw_enable_pm_irq(struct drm_i915_private *dev_priv, uint32_t mask)
+{
+	bdw_update_pm_irq(dev_priv, mask, mask);
+}
+
+void bdw_disable_pm_irq(struct drm_i915_private *dev_priv, uint32_t mask)
+{
+	bdw_update_pm_irq(dev_priv, mask, 0);
+}
+
 static bool cpt_can_enable_serr_int(struct drm_device *dev)
 {
 	struct drm_i915_private *dev_priv = dev->dev_private;
@@ -979,6 +1019,131 @@ static void notify_ring(struct drm_device *dev,
 	i915_queue_hangcheck(dev);
 }
 
+static u32 vlv_c0_residency(struct drm_i915_private *dev_priv,
+				struct  intel_rps_ei_calc *rps_ei)
+{
+	u32 cz_ts, cz_freq_khz;
+	u32 render_count, media_count;
+	u32 elapsed_render, elapsed_media, elapsed_time;
+	u32 residency = 0;
+
+	cz_ts = vlv_punit_read(dev_priv, PUNIT_REG_CZ_TIMESTAMP);
+	cz_freq_khz = DIV_ROUND_CLOSEST(dev_priv->mem_freq * 1000, 4);
+
+	render_count = I915_READ(VLV_RENDER_C0_COUNT_REG);
+	media_count = I915_READ(VLV_MEDIA_C0_COUNT_REG);
+
+	if (rps_ei->cz_ts_ei == 0) {
+		rps_ei->cz_ts_ei = cz_ts;
+		rps_ei->render_ei_c0 = render_count;
+		rps_ei->media_ei_c0 = media_count;
+
+		return dev_priv->rps.cur_freq;
+	}
+
+	elapsed_time = cz_ts - rps_ei->cz_ts_ei;
+	rps_ei->cz_ts_ei = cz_ts;
+
+	elapsed_render = render_count - rps_ei->render_ei_c0;
+	rps_ei->render_ei_c0 = render_count;
+
+	elapsed_media = media_count - rps_ei->media_ei_c0;
+	rps_ei->media_ei_c0 = media_count;
+
+	/* Convert all the counters into common unit of milli sec */
+	elapsed_time /= VLV_CZ_CLOCK_TO_MILLI_SEC;
+	elapsed_render /=  cz_freq_khz;
+	elapsed_media /= cz_freq_khz;
+
+	/*
+	 * Calculate overall C0 residency percentage
+	 * only if elapsed time is non zero
+	 */
+	if (elapsed_time) {
+		residency =
+			((max(elapsed_render, elapsed_media) * 100)
+				/ elapsed_time);
+	}
+
+	return residency;
+}
+
+/**
+ * vlv_calc_delay_from_C0_counters - Increase/Decrease freq based on GPU
+ * busy-ness calculated from C0 counters of render & media power wells
+ * @dev_priv: DRM device private
+ *
+ */
+static u32 vlv_calc_delay_from_C0_counters(struct drm_i915_private *dev_priv)
+{
+	u32 residency_C0_up = 0, residency_C0_down = 0;
+	u8 new_delay, adj;
+
+	dev_priv->rps.ei_interrupt_count++;
+
+	WARN_ON(!mutex_is_locked(&dev_priv->rps.hw_lock));
+
+
+	if (dev_priv->rps_up_ei.cz_ts_ei == 0) {
+		vlv_c0_residency(dev_priv, &dev_priv->rps_up_ei);
+		vlv_c0_residency(dev_priv, &dev_priv->rps_down_ei);
+		return dev_priv->rps.cur_freq;
+	}
+
+
+	/*
+	 * To down throttle, C0 residency should be less than down threshold
+	 * for continous EI intervals. So calculate down EI counters
+	 * once in VLV_INT_COUNT_FOR_DOWN_EI
+	 */
+	if (dev_priv->rps.ei_interrupt_count == VLV_INT_COUNT_FOR_DOWN_EI) {
+
+		dev_priv->rps.ei_interrupt_count = 0;
+
+		residency_C0_down = vlv_c0_residency(dev_priv,
+						&dev_priv->rps_down_ei);
+	} else {
+		residency_C0_up = vlv_c0_residency(dev_priv,
+						&dev_priv->rps_up_ei);
+	}
+
+	new_delay = dev_priv->rps.cur_freq;
+
+	adj = dev_priv->rps.last_adj;
+	/* C0 residency is greater than UP threshold. Increase Frequency */
+	if (residency_C0_up >= VLV_RP_UP_EI_THRESHOLD) {
+		if (adj > 0)
+			adj *= 2;
+		else
+			adj = 1;
+
+		if (dev_priv->rps.cur_freq < dev_priv->rps.max_freq_softlimit)
+			new_delay = dev_priv->rps.cur_freq + adj;
+
+		/*
+		 * For better performance, jump directly
+		 * to RPe if we're below it.
+		 */
+		if (new_delay < dev_priv->rps.efficient_freq)
+			new_delay = dev_priv->rps.efficient_freq;
+
+	} else if (!dev_priv->rps.ei_interrupt_count &&
+			(residency_C0_down < VLV_RP_DOWN_EI_THRESHOLD)) {
+		if (adj < 0)
+			adj *= 2;
+		else
+			adj = -1;
+		/*
+		 * This means, C0 residency is less than down threshold over
+		 * a period of VLV_INT_COUNT_FOR_DOWN_EI. So, reduce the freq
+		 */
+		if (dev_priv->rps.cur_freq > dev_priv->rps.min_freq_softlimit)
+			new_delay = dev_priv->rps.cur_freq + adj;
+	}
+
+	return new_delay;
+}
+
 static void gen6_pm_rps_work(struct work_struct *work)
 {
 	drm_i915_private_t *dev_priv = container_of(work, drm_i915_private_t,
@@ -989,14 +1154,18 @@ static void gen6_pm_rps_work(struct work_struct *work)
 	spin_lock_irq(&dev_priv->irq_lock);
 	pm_iir = dev_priv->rps.pm_iir;
 	dev_priv->rps.pm_iir = 0;
-	/* Make sure not to corrupt PMIMR state used by ringbuffer code */
-	snb_enable_pm_irq(dev_priv, GEN6_PM_RPS_EVENTS);
+	if (IS_BROADWELL(dev_priv->dev))
+		bdw_enable_pm_irq(dev_priv, dev_priv->pm_rps_events);
+	else {
+		/* Make sure not to corrupt PMIMR state used by ringbuffer */
+		snb_enable_pm_irq(dev_priv, dev_priv->pm_rps_events);
+	}
 	spin_unlock_irq(&dev_priv->irq_lock);
 
 	/* Make sure we didn't queue anything we're not going to process. */
-	WARN_ON(pm_iir & ~GEN6_PM_RPS_EVENTS);
+	WARN_ON(pm_iir & ~dev_priv->pm_rps_events);
 
-	if ((pm_iir & GEN6_PM_RPS_EVENTS) == 0)
+	if ((pm_iir & dev_priv->pm_rps_events) == 0)
 		return;
 
 	mutex_lock(&dev_priv->rps.hw_lock);
@@ -1007,36 +1176,40 @@ static void gen6_pm_rps_work(struct work_struct *work)
 			adj *= 2;
 		else
 			adj = 1;
-		new_delay = dev_priv->rps.cur_delay + adj;
+		new_delay = dev_priv->rps.cur_freq + adj;
 
 		/*
 		 * For better performance, jump directly
 		 * to RPe if we're below it.
 		 */
-		if (new_delay < dev_priv->rps.rpe_delay)
-			new_delay = dev_priv->rps.rpe_delay;
+		if (new_delay < dev_priv->rps.efficient_freq)
+			new_delay = dev_priv->rps.efficient_freq;
 	} else if (pm_iir & GEN6_PM_RP_DOWN_TIMEOUT) {
-		if (dev_priv->rps.cur_delay > dev_priv->rps.rpe_delay)
-			new_delay = dev_priv->rps.rpe_delay;
+		if (dev_priv->rps.cur_freq > dev_priv->rps.efficient_freq)
+			new_delay = dev_priv->rps.efficient_freq;
 		else
-			new_delay = dev_priv->rps.min_delay;
+			new_delay = dev_priv->rps.min_freq_softlimit;
 		adj = 0;
+	} else if (pm_iir & GEN6_PM_RP_UP_EI_EXPIRED) {
+		new_delay = vlv_calc_delay_from_C0_counters(dev_priv);
 	} else if (pm_iir & GEN6_PM_RP_DOWN_THRESHOLD) {
 		if (adj < 0)
 			adj *= 2;
 		else
 			adj = -1;
-		new_delay = dev_priv->rps.cur_delay + adj;
+		new_delay = dev_priv->rps.cur_freq + adj;
 	} else { /* unknown event */
-		new_delay = dev_priv->rps.cur_delay;
+		new_delay = dev_priv->rps.cur_freq;
 	}
 
 	/* sysfs frequency interfaces may have snuck in while servicing the
 	 * interrupt
 	 */
 	new_delay = clamp_t(int, new_delay,
-			    dev_priv->rps.min_delay, dev_priv->rps.max_delay);
-	dev_priv->rps.last_adj = new_delay - dev_priv->rps.cur_delay;
+			    dev_priv->rps.min_freq_softlimit,
+			    dev_priv->rps.max_freq_softlimit);
+
+	dev_priv->rps.last_adj = new_delay - dev_priv->rps.cur_freq;
 
 	if (IS_VALLEYVIEW(dev_priv->dev))
 		valleyview_set_rps(dev_priv->dev, new_delay);
@@ -1185,6 +1358,19 @@ static void snb_gt_irq_handler(struct drm_device *dev,
 		ivybridge_parity_error_irq_handler(dev, gt_iir);
 }
 
+static void gen8_rps_irq_handler(struct drm_i915_private *dev_priv, u32 pm_iir)
+{
+	if ((pm_iir & dev_priv->pm_rps_events) == 0)
+		return;
+
+	spin_lock(&dev_priv->irq_lock);
+	dev_priv->rps.pm_iir |= pm_iir & dev_priv->pm_rps_events;
+	bdw_disable_pm_irq(dev_priv, pm_iir & dev_priv->pm_rps_events);
+	spin_unlock(&dev_priv->irq_lock);
+
+	queue_work(dev_priv->wq, &dev_priv->rps.work);
+}
+
 static irqreturn_t gen8_gt_irq_handler(struct drm_device *dev,
 				       struct drm_i915_private *dev_priv,
 				       u32 master_ctl)
@@ -1218,6 +1404,17 @@ static irqreturn_t gen8_gt_irq_handler(struct drm_device *dev,
 			I915_WRITE(GEN8_GT_IIR(1), tmp);
 		} else
 			DRM_ERROR("The master control interrupt lied (GT1)!\n");
+	}
+
+	if (master_ctl & GEN8_GT_PM_IRQ) {
+		tmp = I915_READ(GEN8_GT_IIR(2));
+		if (tmp & dev_priv->pm_rps_events) {
+			ret = IRQ_HANDLED;
+			gen8_rps_irq_handler(dev_priv, tmp);
+			I915_WRITE(GEN8_GT_IIR(2),
+				   tmp & dev_priv->pm_rps_events);
+		} else
+			DRM_ERROR("The master control interrupt lied (PM)!\n");
 	}
 
 	if (master_ctl & GEN8_GT_VECS_IRQ) {
@@ -1408,10 +1605,10 @@ static void i9xx_pipe_crc_irq_handler(struct drm_device *dev, enum pipe pipe)
  * the work queue. */
 static void gen6_rps_irq_handler(struct drm_i915_private *dev_priv, u32 pm_iir)
 {
-	if (pm_iir & GEN6_PM_RPS_EVENTS) {
+	if (pm_iir & dev_priv->pm_rps_events) {
 		spin_lock(&dev_priv->irq_lock);
-		dev_priv->rps.pm_iir |= pm_iir & GEN6_PM_RPS_EVENTS;
-		snb_disable_pm_irq(dev_priv, pm_iir & GEN6_PM_RPS_EVENTS);
+		dev_priv->rps.pm_iir |= pm_iir & dev_priv->pm_rps_events;
+		snb_disable_pm_irq(dev_priv, pm_iir & dev_priv->pm_rps_events);
 		spin_unlock(&dev_priv->irq_lock);
 
 		queue_work(dev_priv->wq, &dev_priv->rps.work);
@@ -2197,8 +2394,8 @@ static void __always_unused i915_pageflip_stall_check(struct drm_device *dev, in
 	} else {
 		int dspaddr = DSPADDR(intel_crtc->plane);
 		stall_detected = I915_READ(dspaddr) == (i915_gem_obj_ggtt_offset(obj) +
-							crtc->y * crtc->fb->pitches[0] +
-							crtc->x * crtc->fb->bits_per_pixel/8);
+							crtc->y * crtc->primary->fb->pitches[0] +
+							crtc->x * crtc->primary->fb->bits_per_pixel/8);
 	}
 
 	spin_unlock_irqrestore(&dev->event_lock, flags);
@@ -2229,7 +2426,7 @@ static int i915_enable_vblank(struct drm_device *dev, int pipe)
 				     PIPE_VBLANK_INTERRUPT_ENABLE);
 
 	/* maintain vblank delivery even in deep C-states */
-	if (dev_priv->info->gen == 3)
+	if (INTEL_INFO(dev)->gen == 3)
 		I915_WRITE(INSTPM, _MASKED_BIT_DISABLE(INSTPM_AGPBUSY_DIS));
 	spin_unlock_irqrestore(&dev_priv->irq_lock, irqflags);
 
@@ -2301,7 +2498,7 @@ static void i915_disable_vblank(struct drm_device *dev, int pipe)
 	unsigned long irqflags;
 
 	spin_lock_irqsave(&dev_priv->irq_lock, irqflags);
-	if (dev_priv->info->gen == 3)
+	if (INTEL_INFO(dev)->gen == 3)
 		I915_WRITE(INSTPM, _MASKED_BIT_ENABLE(INSTPM_AGPBUSY_DIS));
 
 	i915_disable_pipestat(dev_priv, pipe,
@@ -2821,7 +3018,7 @@ static void gen5_gt_irq_postinstall(struct drm_device *dev)
 	POSTING_READ(GTIER);
 
 	if (INTEL_INFO(dev)->gen >= 6) {
-		pm_irqs |= GEN6_PM_RPS_EVENTS;
+		pm_irqs |= dev_priv->pm_rps_events;
 
 		if (HAS_VEBOX(dev))
 			pm_irqs |= PM_VEBOX_USER_INTERRUPT;
@@ -2965,6 +3162,8 @@ static void gen8_gt_irq_postinstall(struct drm_i915_private *dev_priv)
 		I915_WRITE(GEN8_GT_IER(i), gt_interrupts[i]);
 	}
 	POSTING_READ(GEN8_GT_IER(0));
+
+	dev_priv->pm_irq_mask = 0xffffffff;
 }
 
 static void gen8_de_irq_postinstall(struct drm_i915_private *dev_priv)
@@ -3806,6 +4005,13 @@ void intel_irq_init(struct drm_device *dev)
 	INIT_WORK(&dev_priv->gpu_error.work, i915_error_work_func);
 	INIT_WORK(&dev_priv->rps.work, gen6_pm_rps_work);
 	INIT_WORK(&dev_priv->l3_parity.error_work, ivybridge_parity_work);
+
+	/* Let's track the enabled rps events */
+	if (IS_VALLEYVIEW(dev))
+		/* WaGsvRC0ResidenncyMethod:VLV */
+		dev_priv->pm_rps_events = GEN6_PM_RP_UP_EI_EXPIRED;
+	else
+		dev_priv->pm_rps_events = GEN6_PM_RPS_EVENTS;
 
 	setup_timer(&dev_priv->gpu_error.hangcheck_timer,
 		    i915_hangcheck_elapsed,

@@ -140,6 +140,15 @@ config SAMSUNG_USB3PHY
 	  Enable this to support Samsung USB 3.0 (Super Speed) phy controller
 	  for samsung SoCs.
 
+config TEGRA_XUSB_PHY
+	tristate "NVIDIA Tegra XUSB PHY Driver"
+	depends on ARCH_TEGRA && MFD_SYSCON
+	help
+	  Enable this to support the XUSB PHY present on NVIDIA Tegra114
+	  and later SoCs.  This driver supports UTMI, HSIC, and SuperSpeed
+	  interfaces and handles all PHY functionality for the Tegra XHCI
+	  host-controller driver.
+
 config TWL6030_USB
 	tristate "TWL6030 USB Transceiver Driver"
 	depends on TWL4030_CORE && OMAP_USB2 && USB_MUSB_OMAP2PLUS
@@ -201,7 +210,7 @@ config USB_ISP1301
 
 config USB_MSM_OTG
 	tristate "OTG support for Qualcomm on-chip USB controller"
-	depends on (USB || USB_GADGET) && ARCH_MSM
+	depends on (USB || USB_GADGET) && ARCH_QCOM
 	select USB_PHY
 	help
 	  Enable this to support the USB OTG transceiver on MSM chips. It
@@ -259,9 +268,20 @@ config USB_RCAR_GEN2_PHY
 	  To compile this driver as a module, choose M here: the
 	  module will be called phy-rcar-gen2-usb.
 
+config USB_QCOM_DWC3_PHY
+	tristate "Qualcomm USB controller DWC3 PHY wrappers support"
+	depends on (USB || USB_GADGET) && ARCH_QCOM
+	select USB_PHY
+	help
+	  Enable this to support the DWC3 USB PHY transceivers on QCOM chips
+	  with DWC3 USB core. It handles PHY initialization, clock
+	  management required after resetting the hardware and power
+	  management. This driver is required even for peripheral only or
+	  host only mode configurations.
+
 config USB_ULPI
 	bool "Generic ULPI Transceiver Driver"
-	depends on ARM
+	depends on ARM || ARM64
 	help
 	  Enable this to support ULPI connected USB OTG transceivers which
 	  are likely found on embedded boards.

@@ -18,17 +18,18 @@
  *
  */
 
-#include <linux/kernel.h>
-#include <linux/module.h>
 #include <linux/init.h>
-#include <linux/mm.h>
 #include <linux/io.h>
+#include <linux/kernel.h>
+#include <linux/mm.h>
+#include <linux/module.h>
 
-#include <asm/page.h>
+#include <soc/tegra/iomap.h>
+
 #include <asm/mach/map.h>
+#include <asm/page.h>
 
 #include "board.h"
-#include "iomap.h"
 
 static struct map_desc tegra_io_desc[] __initdata = {
 	{

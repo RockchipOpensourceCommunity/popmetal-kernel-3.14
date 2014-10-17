@@ -273,6 +273,7 @@ config SERIAL_SIRFSOC_CONSOLE
 config SERIAL_TEGRA
 	tristate "NVIDIA Tegra20/30 SoC serial controller"
 	depends on ARCH_TEGRA && TEGRA20_APB_DMA
+	depends on RESET_CONTROLLER
 	select SERIAL_CORE
 	help
 	  Support for the on-chip UARTs on the NVIDIA Tegra series SOCs
@@ -1024,7 +1025,7 @@ config SERIAL_SGI_IOC3
 
 config SERIAL_MSM
 	bool "MSM on-chip serial port support"
-	depends on ARCH_MSM
+	depends on ARCH_MSM || ARCH_QCOM
 	select SERIAL_CORE
 
 config SERIAL_MSM_CONSOLE

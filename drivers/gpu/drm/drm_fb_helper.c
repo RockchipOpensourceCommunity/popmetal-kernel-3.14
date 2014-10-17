@@ -45,24 +45,38 @@ static LIST_HEAD(kernel_fb_helper_list);
  * DOC: fbdev helpers
  *
  * The fb helper functions are useful to provide an fbdev on top of a drm kernel
- * mode setting driver. They can be used mostly independantely from the crtc
+ * mode setting driver. They can be used mostly independently from the crtc
  * helper functions used by many drivers to implement the kernel mode setting
  * interfaces.
  *
- * Initialization is done as a three-step process with drm_fb_helper_init(),
- * drm_fb_helper_single_add_all_connectors() and drm_fb_helper_initial_config().
- * Drivers with fancier requirements than the default beheviour can override the
- * second step with their own code.  Teardown is done with drm_fb_helper_fini().
+ * Initialization is done as a four-step process with drm_fb_helper_prepare(),
+ * drm_fb_helper_init(), drm_fb_helper_single_add_all_connectors() and
+ * drm_fb_helper_initial_config(). Drivers with fancier requirements than the
+ * default behaviour can override the third step with their own code.
+ * Teardown is done with drm_fb_helper_fini().
  *
  * At runtime drivers should restore the fbdev console by calling
  * drm_fb_helper_restore_fbdev_mode() from their ->lastclose callback. They
  * should also notify the fb helper code from updates to the output
  * configuration by calling drm_fb_helper_hotplug_event(). For easier
  * integration with the output polling code in drm_crtc_helper.c the modeset
- * code proves a ->output_poll_changed callback.
+ * code provides a ->output_poll_changed callback.
  *
  * All other functions exported by the fb helper library can be used to
  * implement the fbdev driver interface by the driver.
+ *
+ * It is possible, though perhaps somewhat tricky, to implement race-free
+ * hotplug detection using the fbdev helpers. The drm_fb_helper_prepare()
+ * helper must be called first to initialize the minimum required to make
+ * hotplug detection work. Drivers also need to make sure to properly set up
+ * the dev->mode_config.funcs member. After calling drm_kms_helper_poll_init()
+ * it is safe to enable interrupts and start processing hotplug events. At the
+ * same time, drivers should initialize all modeset objects such as CRTCs,
+ * encoders and connectors. To finish up the fbdev helper initialization, the
+ * drm_fb_helper_init() function is called. To probe for all attached displays
+ * and set up an initial configuration using the detected hardware, drivers
+ * should call drm_fb_helper_single_add_all_connectors() followed by
+ * drm_fb_helper_initial_config().
  */
 
 /**
@@ -232,7 +246,7 @@ static struct drm_framebuffer *drm_mode_config_fb(struct drm_crtc *crtc)
 
 	list_for_each_entry(c, &dev->mode_config.crtc_list, head) {
 		if (crtc->base.id == c->base.id)
-			return c->fb;
+			return c->primary->fb;
 	}
 
 	return NULL;
@@ -273,15 +287,7 @@ int drm_fb_helper_debug_leave(struct fb_info *info)
 }
 EXPORT_SYMBOL(drm_fb_helper_debug_leave);
 
-/**
- * drm_fb_helper_restore_fbdev_mode - restore fbdev configuration
- * @fb_helper: fbcon to restore
- *
- * This should be called from driver's drm ->lastclose callback
- * when implementing an fbcon on top of kms using this helper. This ensures that
- * the user isn't greeted with a black screen when e.g. X dies.
- */
-bool drm_fb_helper_restore_fbdev_mode(struct drm_fb_helper *fb_helper)
+static bool restore_fbdev_mode(struct drm_fb_helper *fb_helper)
 {
 	struct drm_device *dev = fb_helper->dev;
 	struct drm_plane *plane;
@@ -291,7 +297,8 @@ bool drm_fb_helper_restore_fbdev_mode(struct drm_fb_helper *fb_helper)
 	drm_warn_on_modeset_not_all_locked(dev);
 
 	list_for_each_entry(plane, &dev->mode_config.plane_list, head)
-		drm_plane_force_disable(plane);
+		if (plane->type != DRM_PLANE_TYPE_PRIMARY)
+			drm_plane_force_disable(plane);
 
 	for (i = 0; i < fb_helper->crtc_count; i++) {
 		struct drm_mode_set *mode_set = &fb_helper->crtc_info[i].mode_set;
@@ -310,7 +317,40 @@ bool drm_fb_helper_restore_fbdev_mode(struct drm_fb_helper *fb_helper)
 	}
 	return error;
 }
-EXPORT_SYMBOL(drm_fb_helper_restore_fbdev_mode);
+/**
+ * drm_fb_helper_restore_fbdev_mode - restore fbdev configuration
+ * @fb_helper: fbcon to restore
+ *
+ * This should be called from driver's drm ->lastclose callback
+ * when implementing an fbcon on top of kms using this helper. This ensures that
+ * the user isn't greeted with a black screen when e.g. X dies.
+ *
+ * Use this variant if you need to bypass locking (panic), or already
+ * hold all modeset locks.  Otherwise use drm_fb_helper_restore_fbdev_mode_unlocked()
+ */
+static bool drm_fb_helper_restore_fbdev_mode(struct drm_fb_helper *fb_helper)
+{
+	return restore_fbdev_mode(fb_helper);
+}
+
+/**
+ * drm_fb_helper_restore_fbdev_mode_unlocked - restore fbdev configuration
+ * @fb_helper: fbcon to restore
+ *
+ * This should be called from driver's drm ->lastclose callback
+ * when implementing an fbcon on top of kms using this helper. This ensures that
+ * the user isn't greeted with a black screen when e.g. X dies.
+ */
+bool drm_fb_helper_restore_fbdev_mode_unlocked(struct drm_fb_helper *fb_helper)
+{
+	struct drm_device *dev = fb_helper->dev;
+	bool ret;
+	drm_modeset_lock_all(dev);
+	ret = restore_fbdev_mode(fb_helper);
+	drm_modeset_unlock_all(dev);
+	return ret;
+}
+EXPORT_SYMBOL(drm_fb_helper_restore_fbdev_mode_unlocked);
 
 /*
  * restore fbcon display for all kms driver's using this helper, used for sysrq
@@ -365,9 +405,9 @@ static bool drm_fb_helper_is_bound(struct drm_fb_helper *fb_helper)
 		return false;
 
 	list_for_each_entry(crtc, &dev->mode_config.crtc_list, head) {
-		if (crtc->fb)
+		if (crtc->primary->fb)
 			crtcs_bound++;
-		if (crtc->fb == fb_helper->fb)
+		if (crtc->primary->fb == fb_helper->fb)
 			bound++;
 	}
 
@@ -492,6 +532,24 @@ static void drm_fb_helper_crtc_free(struct drm_fb_helper *helper)
 }
 
 /**
+ * drm_fb_helper_prepare - setup a drm_fb_helper structure
+ * @dev: DRM device
+ * @helper: driver-allocated fbdev helper structure to set up
+ * @funcs: pointer to structure of functions associate with this helper
+ *
+ * Sets up the bare minimum to make the framebuffer helper usable. This is
+ * useful to implement race-free initialization of the polling helpers.
+ */
+void drm_fb_helper_prepare(struct drm_device *dev, struct drm_fb_helper *helper,
+			   const struct drm_fb_helper_funcs *funcs)
+{
+	INIT_LIST_HEAD(&helper->kernel_fb_list);
+	helper->funcs = funcs;
+	helper->dev = dev;
+}
+EXPORT_SYMBOL(drm_fb_helper_prepare);
+
+/**
  * drm_fb_helper_init - initialize a drm_fb_helper structure
  * @dev: drm device
  * @fb_helper: driver-allocated fbdev helper structure to initialize
@@ -503,8 +561,7 @@ static void drm_fb_helper_crtc_free(struct drm_fb_helper *helper)
  * nor register the fbdev. This is only done in drm_fb_helper_initial_config()
  * to allow driver writes more control over the exact init sequence.
  *
- * Drivers must set fb_helper->funcs before calling
- * drm_fb_helper_initial_config().
+ * Drivers must call drm_fb_helper_prepare() before calling this function.
  *
  * RETURNS:
  * Zero if everything went ok, nonzero otherwise.
@@ -516,9 +573,8 @@ int drm_fb_helper_init(struct drm_device *dev,
 	struct drm_crtc *crtc;
 	int i;
 
-	fb_helper->dev = dev;
-
-	INIT_LIST_HEAD(&fb_helper->kernel_fb_list);
+	if (!max_conn_count)
+		return -EINVAL;
 
 	fb_helper->crtc_info = kcalloc(crtc_count, sizeof(struct drm_fb_helper_crtc), GFP_KERNEL);
 	if (!fb_helper->crtc_info)
@@ -807,25 +863,14 @@ EXPORT_SYMBOL(drm_fb_helper_check_var);
 int drm_fb_helper_set_par(struct fb_info *info)
 {
 	struct drm_fb_helper *fb_helper = info->par;
-	struct drm_device *dev = fb_helper->dev;
 	struct fb_var_screeninfo *var = &info->var;
-	int ret;
-	int i;
 
 	if (var->pixclock != 0) {
 		DRM_ERROR("PIXEL CLOCK SET\n");
 		return -EINVAL;
 	}
 
-	drm_modeset_lock_all(dev);
-	for (i = 0; i < fb_helper->crtc_count; i++) {
-		ret = drm_mode_set_config_internal(&fb_helper->crtc_info[i].mode_set);
-		if (ret) {
-			drm_modeset_unlock_all(dev);
-			return ret;
-		}
-	}
-	drm_modeset_unlock_all(dev);
+	drm_fb_helper_restore_fbdev_mode_unlocked(fb_helper);
 
 	if (fb_helper->delayed_hotplug) {
 		fb_helper->delayed_hotplug = false;

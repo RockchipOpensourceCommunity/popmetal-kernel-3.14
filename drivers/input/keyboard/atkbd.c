@@ -83,8 +83,8 @@ static const unsigned short atkbd_set2_keycode[ATKBD_KEYMAP_SIZE] = {
 #include "hpps2atkbd.h"	/* include the keyboard scancodes */
 
 #else
-	  0, 67, 65, 63, 61, 59, 60, 88,  0, 68, 66, 64, 62, 15, 41,117,
-	  0, 56, 42, 93, 29, 16,  2,  0,  0,  0, 44, 31, 30, 17,  3,  0,
+	  0, 67, 65, 63, 61, 59, 60, 88,183, 68, 66, 64, 62, 15, 41,117,
+	184, 56, 42, 93, 29, 16,  2,  0,185,  0, 44, 31, 30, 17,  3,  0,
 	  0, 46, 45, 32, 18,  5,  4, 95,  0, 57, 47, 33, 20, 19,  6,183,
 	  0, 49, 48, 35, 34, 21,  7,184,  0,  0, 50, 36, 22,  8,  9,185,
 	  0, 51, 37, 23, 24, 11, 10,  0,  0, 52, 53, 38, 39, 25, 12,  0,
@@ -95,7 +95,7 @@ static const unsigned short atkbd_set2_keycode[ATKBD_KEYMAP_SIZE] = {
 	  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,
 	217,100,255,  0, 97,165,  0,  0,156,  0,  0,  0,  0,  0,  0,125,
 	173,114,  0,113,  0,  0,  0,126,128,  0,  0,140,  0,  0,  0,127,
-	159,  0,115,  0,164,  0,  0,116,158,  0,172,166,  0,  0,  0,142,
+	159,  0,115,  0,164,  0,238,116,158,  0,172,166,  0,  0,  0,142,
 	157,  0,  0,  0,  0,  0,  0,  0,155,  0, 98,  0,  0,163,  0,  0,
 	226,  0,  0,  0,  0,  0,  0,  0,  0,255, 96,  0,  0,  0,143,  0,
 	  0,  0,  0,  0,  0,  0,  0,  0,  0,107,  0,105,102,  0,  0,112,
@@ -520,6 +520,9 @@ static irqreturn_t atkbd_interrupt(struct serio *serio, unsigned char data,
 	}
 
 	atkbd->release = false;
+
+	if (device_may_wakeup(atkbd->dev->dev.parent))
+		pm_wakeup_event(atkbd->dev->dev.parent, 0);
 out:
 	return IRQ_HANDLED;
 }
@@ -717,6 +720,7 @@ static int atkbd_probe(struct atkbd *atkbd)
 {
 	struct ps2dev *ps2dev = &atkbd->ps2dev;
 	unsigned char param[2];
+	int getid_attempts_left = 5;
 
 /*
  * Some systems, where the bit-twiddling when testing the io-lines of the
@@ -737,8 +741,19 @@ static int atkbd_probe(struct atkbd *atkbd)
  * should make sure we don't try to set the LEDs on it.
  */
 
+/* Chrome OS workaround only: we have a bug in the EC that causes keystrokes to
+ * be enabled too early, so we may read scancodes instead of the GETID
+ * response.  In that case, instead of failing, retry a few times on i8042 KBD
+ * port only.
+ */
+	if (ps2dev->serio && strcmp(ps2dev->serio->name, "i8042 KBD port"))
+		getid_attempts_left = 1;
+
+getid_retry:
+	getid_attempts_left--;
 	param[0] = param[1] = 0xa5;	/* initialize with invalid values */
 	if (ps2_command(ps2dev, param, ATKBD_CMD_GETID)) {
+		dev_warn(&ps2dev->serio->dev, "GETID failed");
 
 /*
  * If the get ID command failed, we check if we can at least set the LEDs on
@@ -746,14 +761,30 @@ static int atkbd_probe(struct atkbd *atkbd)
  * the LEDs off, which we want anyway.
  */
 		param[0] = 0;
-		if (ps2_command(ps2dev, param, ATKBD_CMD_SETLEDS))
-			return -1;
+		if (ps2_command(ps2dev, param, ATKBD_CMD_SETLEDS)) {
+			dev_warn(&ps2dev->serio->dev, "atkbd: SETLEDS failed");
+			if (getid_attempts_left <= 0)
+				return -1;
+			else {
+				ps2_drain(ps2dev, 6, 1);
+				ps2_command(ps2dev, NULL, ATKBD_CMD_ENABLE);
+				goto getid_retry;
+			}
+		}
 		atkbd->id = 0xabba;
 		return 0;
 	}
 
-	if (!ps2_is_keyboard_id(param[0]))
-		return -1;
+	if (!ps2_is_keyboard_id(param[0])) {
+		dev_warn(&ps2dev->serio->dev, "bad keyboard id %d", param[0]);
+		if (getid_attempts_left <= 0)
+			return -1;
+		else {
+			ps2_drain(ps2dev, 6, 1);
+			ps2_command(ps2dev, NULL, ATKBD_CMD_ENABLE);
+			goto getid_retry;
+		}
+	}
 
 	atkbd->id = (param[0] << 8) | param[1];
 
@@ -1165,6 +1196,7 @@ static int atkbd_connect(struct serio *serio, struct serio_driver *drv)
 	if (atkbd->write) {
 
 		if (atkbd_probe(atkbd)) {
+			dev_err(&serio->dev, "probe failed");
 			err = -ENODEV;
 			goto fail3;
 		}
@@ -1179,6 +1211,9 @@ static int atkbd_connect(struct serio *serio, struct serio_driver *drv)
 
 	atkbd_set_keycode_table(atkbd);
 	atkbd_set_device_attrs(atkbd);
+
+	if (!device_can_wakeup(atkbd->dev->dev.parent))
+		device_init_wakeup(atkbd->dev->dev.parent, true);
 
 	err = sysfs_create_group(&serio->dev.kobj, &atkbd_attribute_group);
 	if (err)
@@ -1221,11 +1256,16 @@ static int atkbd_reconnect(struct serio *serio)
 
 	mutex_lock(&atkbd->mutex);
 
+	if (atkbd->write)
+		atkbd_deactivate(atkbd);
+
 	atkbd_disable(atkbd);
 
 	if (atkbd->write) {
-		if (atkbd_probe(atkbd))
+		if (atkbd_probe(atkbd)) {
+			dev_err(&serio->dev, "reconnect: probe failed");
 			goto out;
+		}
 
 		if (atkbd->set != atkbd_select_set(atkbd, atkbd->set, atkbd->extra))
 			goto out;

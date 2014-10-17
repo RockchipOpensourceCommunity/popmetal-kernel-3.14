@@ -41,7 +41,7 @@
  * @id: identifier of the one instance of the TMU controller.
  * @pdata: pointer to the tmu platform/configuration data
  * @base: base address of the single instance of the TMU controller.
- * @base_common: base address of the common registers of the TMU controller.
+ * @base_second: base address of the common registers of the TMU controller.
  * @irq: irq number of the TMU controller.
  * @soc: id of the SOC type.
  * @irq_work: pointer to the irq work structure.
@@ -56,7 +56,7 @@ struct exynos_tmu_data {
 	int id;
 	struct exynos_tmu_platform_data *pdata;
 	void __iomem *base;
-	void __iomem *base_common;
+	void __iomem *base_second;
 	int irq;
 	enum soc_type soc;
 	struct work_struct irq_work;
@@ -225,6 +225,8 @@ skip_calib_data:
 			trigger_levs++;
 	}
 
+	rising_threshold = readl(data->base + reg->threshold_th0);
+
 	if (data->soc == SOC_ARCH_EXYNOS4210) {
 		/* Write temperature code for threshold */
 		threshold_code = temp_to_code(data, pdata->threshold);
@@ -238,7 +240,7 @@ skip_calib_data:
 			writeb(pdata->trigger_levels[i], data->base +
 			reg->threshold_th0 + i * sizeof(reg->threshold_th0));
 
-		writel(reg->inten_rise_mask, data->base + reg->tmu_intclear);
+		writel(reg->intclr_rise_mask, data->base + reg->tmu_intclear);
 	} else {
 		/* Write temperature code for rising and falling threshold */
 		for (i = 0;
@@ -249,6 +251,7 @@ skip_calib_data:
 				ret = threshold_code;
 				goto out;
 			}
+			rising_threshold &= ~(0xff << 8 * i);
 			rising_threshold |= threshold_code << 8 * i;
 			if (pdata->threshold_falling) {
 				threshold_code = temp_to_code(data,
@@ -265,8 +268,8 @@ skip_calib_data:
 		writel(falling_threshold,
 				data->base + reg->threshold_th1);
 
-		writel((reg->inten_rise_mask << reg->inten_rise_shift) |
-			(reg->inten_fall_mask << reg->inten_fall_shift),
+		writel((reg->intclr_rise_mask << reg->intclr_rise_shift) |
+			(reg->intclr_fall_mask << reg->intclr_fall_shift),
 				data->base + reg->tmu_intclear);
 
 		/* if last threshold limit is also present */
@@ -281,6 +284,7 @@ skip_calib_data:
 			}
 			if (i == EXYNOS_MAX_TRIGGER_PER_REG - 1) {
 				/* 1-4 level to be assigned in th0 reg */
+				rising_threshold &= ~(0xff << 8 * i);
 				rising_threshold |= threshold_code << 8 * i;
 				writel(rising_threshold,
 					data->base + reg->threshold_th0);
@@ -298,7 +302,7 @@ skip_calib_data:
 	}
 	/*Clear the PMIN in the common TMU register*/
 	if (reg->tmu_pmin && !data->id)
-		writel(0, data->base_common + reg->tmu_pmin);
+		writel(0, data->base_second + reg->tmu_pmin);
 out:
 	clk_disable(data->clk);
 	mutex_unlock(&data->lock);
@@ -455,7 +459,7 @@ static void exynos_tmu_work(struct work_struct *work)
 
 	/* Find which sensor generated this interrupt */
 	if (reg->tmu_irqstatus) {
-		val_type = readl(data->base_common + reg->tmu_irqstatus);
+		val_type = readl(data->base_second + reg->tmu_irqstatus);
 		if (!((val_type >> data->id) & 0x1))
 			goto out;
 	}
@@ -580,7 +584,7 @@ static int exynos_map_dt_data(struct platform_device *pdev)
 	 * Check if the TMU shares some registers and then try to map the
 	 * memory of common registers.
 	 */
-	if (!TMU_SUPPORTS(pdata, SHARED_MEMORY))
+	if (!TMU_SUPPORTS(pdata, ADDRESS_MULTIPLE))
 		return 0;
 
 	if (of_address_to_resource(pdev->dev.of_node, 1, &res)) {
@@ -588,9 +592,9 @@ static int exynos_map_dt_data(struct platform_device *pdev)
 		return -ENODEV;
 	}
 
-	data->base_common = devm_ioremap(&pdev->dev, res.start,
+	data->base_second = devm_ioremap(&pdev->dev, res.start,
 					resource_size(&res));
-	if (!data->base_common) {
+	if (!data->base_second) {
 		dev_err(&pdev->dev, "Failed to ioremap memory\n");
 		return -ENOMEM;
 	}
@@ -607,10 +611,8 @@ static int exynos_tmu_probe(struct platform_device *pdev)
 
 	data = devm_kzalloc(&pdev->dev, sizeof(struct exynos_tmu_data),
 					GFP_KERNEL);
-	if (!data) {
-		dev_err(&pdev->dev, "Failed to allocate driver structure\n");
+	if (!data)
 		return -ENOMEM;
-	}
 
 	platform_set_drvdata(pdev, data);
 	mutex_init(&data->lock);
@@ -656,7 +658,6 @@ static int exynos_tmu_probe(struct platform_device *pdev)
 	sensor_conf = devm_kzalloc(&pdev->dev,
 				sizeof(struct thermal_sensor_conf), GFP_KERNEL);
 	if (!sensor_conf) {
-		dev_err(&pdev->dev, "Failed to allocate registration struct\n");
 		ret = -ENOMEM;
 		goto err_clk;
 	}

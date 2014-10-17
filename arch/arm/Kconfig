@@ -13,6 +13,7 @@ config ARM
 	select CLONE_BACKWARDS
 	select CPU_PM if (SUSPEND || CPU_IDLE)
 	select DCACHE_WORD_ACCESS if HAVE_EFFICIENT_UNALIGNED_ACCESS
+	select GENERIC_ALLOCATOR
 	select GENERIC_ATOMIC64 if (CPU_V7M || CPU_V6 || !CPU_32v6K || !AEABI)
 	select GENERIC_CLOCKEVENTS_BROADCAST if SMP
 	select GENERIC_IDLE_POLL_SETUP
@@ -180,13 +181,6 @@ config ARCH_HAS_ILOG2_U32
 config ARCH_HAS_ILOG2_U64
 	bool
 
-config ARCH_HAS_CPUFREQ
-	bool
-	help
-	  Internal node to signify that the ARCH has CPUFREQ support
-	  and that the relevant menu configurations are displayed for
-	  it.
-
 config ARCH_HAS_BANDGAP
 	bool
 
@@ -306,8 +300,9 @@ choice
 config ARCH_MULTIPLATFORM
 	bool "Allow multiple platforms to be selected"
 	depends on MMU
+	select ARM_HAS_SG_CHAIN
 	select ARM_PATCH_PHYS_VIRT
-	select AUTO_ZRELADDR
+	select AUTO_ZRELADDR if !ARCH_QCOM
 	select COMMON_CLK
 	select MULTI_IRQ_HANDLER
 	select SPARSE_IRQ
@@ -315,7 +310,6 @@ config ARCH_MULTIPLATFORM
 
 config ARCH_INTEGRATOR
 	bool "ARM Ltd. Integrator family"
-	select ARCH_HAS_CPUFREQ
 	select ARM_AMBA
 	select ARM_PATCH_PHYS_VIRT
 	select AUTO_ZRELADDR
@@ -540,7 +534,6 @@ config ARCH_DOVE
 
 config ARCH_KIRKWOOD
 	bool "Marvell Kirkwood"
-	select ARCH_HAS_CPUFREQ
 	select ARCH_REQUIRE_GPIOLIB
 	select CPU_FEROCEON
 	select GENERIC_CLOCKEVENTS
@@ -641,7 +634,6 @@ config ARCH_LPC32XX
 config ARCH_PXA
 	bool "PXA2xx/PXA3xx-based"
 	depends on MMU
-	select ARCH_HAS_CPUFREQ
 	select ARCH_MTD_XIP
 	select ARCH_REQUIRE_GPIOLIB
 	select ARM_CPU_SUSPEND if PM
@@ -657,9 +649,8 @@ config ARCH_PXA
 	help
 	  Support for Intel/Marvell's PXA2xx/PXA3xx processor line.
 
-config ARCH_MSM_NODT
-	bool "Qualcomm MSM"
-	select ARCH_MSM
+config ARCH_MSM
+	bool "Qualcomm MSM (non-multiplatform)"
 	select ARCH_REQUIRE_GPIOLIB
 	select COMMON_CLK
 	select GENERIC_CLOCKEVENTS
@@ -711,7 +702,6 @@ config ARCH_RPC
 
 config ARCH_SA1100
 	bool "SA1100-based"
-	select ARCH_HAS_CPUFREQ
 	select ARCH_MTD_XIP
 	select ARCH_REQUIRE_GPIOLIB
 	select ARCH_SPARSEMEM_ENABLE
@@ -729,7 +719,6 @@ config ARCH_SA1100
 
 config ARCH_S3C24XX
 	bool "Samsung S3C24XX SoCs"
-	select ARCH_HAS_CPUFREQ
 	select ARCH_REQUIRE_GPIOLIB
 	select CLKDEV_LOOKUP
 	select CLKSRC_SAMSUNG_PWM
@@ -749,7 +738,6 @@ config ARCH_S3C24XX
 
 config ARCH_S3C64XX
 	bool "Samsung S3C64XX"
-	select ARCH_HAS_CPUFREQ
 	select ARCH_REQUIRE_GPIOLIB
 	select ARM_AMBA
 	select ARM_VIC
@@ -810,7 +798,6 @@ config ARCH_S5PC100
 
 config ARCH_S5PV210
 	bool "Samsung S5PV210/S5PC110"
-	select ARCH_HAS_CPUFREQ
 	select ARCH_HAS_HOLES_MEMORYMODEL
 	select ARCH_SPARSEMEM_ENABLE
 	select CLKDEV_LOOKUP
@@ -829,7 +816,6 @@ config ARCH_S5PV210
 
 config ARCH_EXYNOS
 	bool "Samsung EXYNOS"
-	select ARCH_HAS_CPUFREQ
 	select ARCH_HAS_HOLES_MEMORYMODEL
 	select ARCH_REQUIRE_GPIOLIB
 	select ARCH_SPARSEMEM_ENABLE
@@ -864,7 +850,6 @@ config ARCH_DAVINCI
 config ARCH_OMAP1
 	bool "TI OMAP1"
 	depends on MMU
-	select ARCH_HAS_CPUFREQ
 	select ARCH_HAS_HOLES_MEMORYMODEL
 	select ARCH_OMAP
 	select ARCH_REQUIRE_GPIOLIB
@@ -1004,6 +989,8 @@ source "arch/arm/mach-pxa/Kconfig"
 source "arch/arm/plat-pxa/Kconfig"
 
 source "arch/arm/mach-mmp/Kconfig"
+
+source "arch/arm/mach-qcom/Kconfig"
 
 source "arch/arm/mach-realview/Kconfig"
 
@@ -1631,9 +1618,10 @@ config ARCH_NR_GPIO
 	int
 	default 1024 if ARCH_SHMOBILE || ARCH_TEGRA
 	default 512 if ARCH_EXYNOS || ARCH_KEYSTONE || SOC_OMAP5 || SOC_DRA7XX || ARCH_S3C24XX || ARCH_S3C64XX
+	default 416 if ARCH_SUNXI
 	default 392 if ARCH_U8500
 	default 352 if ARCH_VT8500
-	default 288 if ARCH_SUNXI
+	default 288 if ARCH_ROCKCHIP
 	default 264 if MACH_H4700
 	default 0
 	help
@@ -1930,6 +1918,7 @@ config USE_OF
 	select IRQ_DOMAIN
 	select OF
 	select OF_EARLY_FLATTREE
+	select OF_RESERVED_MEM
 	help
 	  Include support for flattened device tree machine descriptions.
 
@@ -2192,9 +2181,7 @@ endmenu
 
 menu "CPU Power Management"
 
-if ARCH_HAS_CPUFREQ
 source "drivers/cpufreq/Kconfig"
-endif
 
 source "drivers/cpuidle/Kconfig"
 

@@ -19,7 +19,8 @@
 #include <linux/of.h>
 #include <linux/clk/tegra.h>
 #include <linux/reset-controller.h>
-#include <linux/tegra-soc.h>
+
+#include <soc/tegra/fuse.h>
 
 #include "clk.h"
 
@@ -135,7 +136,9 @@ static int tegra_clk_rst_assert(struct reset_controller_dev *rcdev,
 	 * knowledge of which reset IDs represent which devices, simply do
 	 * this all the time.
 	 */
+#if 0
 	tegra_read_chipid();
+#endif
 
 	writel_relaxed(BIT(id % 32),
 			clk_base + periph_regs[id / 32].rst_set_reg);
@@ -207,7 +210,7 @@ void __init tegra_init_from_table(struct tegra_clk_init_table *tbl,
 	for (; tbl->clk_id < clk_max; tbl++) {
 		clk = clks[tbl->clk_id];
 		if (IS_ERR_OR_NULL(clk))
-			return;
+			continue;
 
 		if (tbl->parent_id < clk_max) {
 			struct clk *parent = clks[tbl->parent_id];
@@ -290,10 +293,13 @@ struct clk ** __init tegra_lookup_dt_id(int clk_id,
 
 tegra_clk_apply_init_table_func tegra_clk_apply_init_table;
 
-void __init tegra_clocks_apply_init_table(void)
+static int __init tegra_clocks_apply_init_table(void)
 {
 	if (!tegra_clk_apply_init_table)
-		return;
+		return 0;
 
 	tegra_clk_apply_init_table();
+
+	return 0;
 }
+arch_initcall(tegra_clocks_apply_init_table);

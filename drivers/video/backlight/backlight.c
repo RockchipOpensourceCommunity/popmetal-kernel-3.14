@@ -15,6 +15,7 @@
 #include <linux/ctype.h>
 #include <linux/err.h>
 #include <linux/fb.h>
+#include <linux/pm_dark_resume.h>
 #include <linux/slab.h>
 
 #ifdef CONFIG_PMAC_BACKLIGHT
@@ -181,6 +182,44 @@ static ssize_t brightness_store(struct device *dev,
 }
 static DEVICE_ATTR_RW(brightness);
 
+static ssize_t resume_brightness_show(struct device *dev,
+		struct device_attribute *attr, char *buf)
+{
+	struct backlight_device *bd = to_backlight_device(dev);
+
+	return sprintf(buf, "%d\n", bd->props.resume_brightness);
+}
+
+static ssize_t resume_brightness_store(struct device *dev,
+		struct device_attribute *attr, const char *buf, size_t count)
+{
+	int rc;
+	struct backlight_device *bd = to_backlight_device(dev);
+	long resume_brightness;
+
+	rc = kstrtol(buf, 0, &resume_brightness);
+	if (rc)
+		return rc;
+
+	rc = -ENXIO;
+
+	mutex_lock(&bd->ops_lock);
+	if (bd->ops) {
+		if (resume_brightness > bd->props.max_brightness)
+			rc = -EINVAL;
+		else {
+			pr_debug("backlight: set resume_brightness to %ld\n",
+				 resume_brightness);
+			bd->props.resume_brightness = resume_brightness;
+			rc = count;
+		}
+	}
+	mutex_unlock(&bd->ops_lock);
+
+	return rc;
+}
+static DEVICE_ATTR_RW(resume_brightness);
+
 static ssize_t type_show(struct device *dev, struct device_attribute *attr,
 		char *buf)
 {
@@ -236,8 +275,14 @@ static int backlight_resume(struct device *dev)
 	struct backlight_device *bd = to_backlight_device(dev);
 
 	mutex_lock(&bd->ops_lock);
-	if (bd->ops && bd->ops->options & BL_CORE_SUSPENDRESUME) {
+	if ((bd->ops && bd->ops->options & BL_CORE_SUSPENDRESUME) ||
+		bd->props.resume_brightness != -1) {
 		bd->props.state &= ~BL_CORE_SUSPENDED;
+		if (dev_dark_resume_active(dev)) {
+			dev_info(dev, "disabled for dark resume\n");
+			bd->props.brightness = 0;
+		} else if (bd->props.resume_brightness != -1)
+			bd->props.brightness = bd->props.resume_brightness;
 		backlight_update_status(bd);
 	}
 	mutex_unlock(&bd->ops_lock);
@@ -258,6 +303,7 @@ static void bl_device_release(struct device *dev)
 static struct attribute *bl_device_attrs[] = {
 	&dev_attr_bl_power.attr,
 	&dev_attr_brightness.attr,
+	&dev_attr_resume_brightness.attr,
 	&dev_attr_actual_brightness.attr,
 	&dev_attr_max_brightness.attr,
 	&dev_attr_type.attr,
@@ -330,6 +376,7 @@ struct backlight_device *backlight_device_register(const char *name,
 	} else {
 		new_bd->props.type = BACKLIGHT_RAW;
 	}
+	new_bd->props.resume_brightness = -1;
 
 	rc = device_register(&new_bd->dev);
 	if (rc) {
@@ -343,6 +390,7 @@ struct backlight_device *backlight_device_register(const char *name,
 		return ERR_PTR(rc);
 	}
 
+	dev_dark_resume_init(&new_bd->dev, NULL, -1, NULL);
 	new_bd->ops = ops;
 
 #ifdef CONFIG_PMAC_BACKLIGHT
@@ -404,6 +452,7 @@ void backlight_device_unregister(struct backlight_device *bd)
 	mutex_unlock(&bd->ops_lock);
 
 	backlight_unregister_fb(bd);
+	dev_dark_resume_remove(&bd->dev);
 	device_unregister(&bd->dev);
 }
 EXPORT_SYMBOL(backlight_device_unregister);

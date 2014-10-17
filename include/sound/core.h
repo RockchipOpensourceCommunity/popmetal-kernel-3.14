@@ -121,6 +121,8 @@ struct snd_card {
 	int user_ctl_count;		/* count of all user controls */
 	struct list_head controls;	/* all controls for this card */
 	struct list_head ctl_files;	/* active control files */
+	struct mutex user_ctl_lock;	/* protects user controls against
+					   concurrent access */
 
 	struct snd_info_entry *proc_root;	/* root for soundcard specific files */
 	struct snd_info_entry *proc_id;	/* the card id */
@@ -284,9 +286,16 @@ int snd_card_locked(int card);
 extern int (*snd_mixer_oss_notify_callback)(struct snd_card *card, int cmd);
 #endif
 
-int snd_card_create(int idx, const char *id,
-		    struct module *module, int extra_size,
-		    struct snd_card **card_ret);
+int snd_card_new(struct device *parent, int idx, const char *xid,
+		 struct module *module, int extra_size,
+		 struct snd_card **card_ret);
+
+static inline int __deprecated
+snd_card_create(int idx, const char *id, struct module *module, int extra_size,
+		struct snd_card **ret)
+{
+	return snd_card_new(NULL, idx, id, module, extra_size, ret);
+}
 
 int snd_card_disconnect(struct snd_card *card);
 int snd_card_free(struct snd_card *card);
@@ -433,7 +442,6 @@ static inline void snd_printdd(const char *format, ...) {}
 #define gameport_get_port_data(gp) (gp)->port_data
 #endif
 
-#ifdef CONFIG_PCI
 /* PCI quirk list helper */
 struct snd_pci_quirk {
 	unsigned short subvendor;	/* PCI subvendor ID */
@@ -469,12 +477,26 @@ struct snd_pci_quirk {
 #define snd_pci_quirk_name(q)	""
 #endif
 
+#ifdef CONFIG_PCI
 const struct snd_pci_quirk *
 snd_pci_quirk_lookup(struct pci_dev *pci, const struct snd_pci_quirk *list);
 
 const struct snd_pci_quirk *
 snd_pci_quirk_lookup_id(u16 vendor, u16 device,
 			const struct snd_pci_quirk *list);
+#else
+static inline const struct snd_pci_quirk *
+snd_pci_quirk_lookup(struct pci_dev *pci, const struct snd_pci_quirk *list)
+{
+	return NULL;
+}
+
+static inline const struct snd_pci_quirk *
+snd_pci_quirk_lookup_id(u16 vendor, u16 device,
+			const struct snd_pci_quirk *list)
+{
+	return NULL;
+}
 #endif
 
 #endif /* __SOUND_CORE_H */

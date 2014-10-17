@@ -626,15 +626,17 @@ static int i915_batchbuffer(struct drm_device *dev, void *data,
 			    struct drm_file *file_priv)
 {
 	drm_i915_private_t *dev_priv = (drm_i915_private_t *) dev->dev_private;
-	struct drm_i915_master_private *master_priv = dev->primary->master->driver_priv;
-	drm_i915_sarea_t *sarea_priv = (drm_i915_sarea_t *)
-	    master_priv->sarea_priv;
+	struct drm_i915_master_private *master_priv;
+	drm_i915_sarea_t *sarea_priv;
 	drm_i915_batchbuffer_t *batch = data;
 	int ret;
 	struct drm_clip_rect *cliprects = NULL;
 
 	if (drm_core_check_feature(dev, DRIVER_MODESET))
 		return -ENODEV;
+
+	master_priv = dev->primary->master->driver_priv;
+	sarea_priv = (drm_i915_sarea_t *) master_priv->sarea_priv;
 
 	if (!dev_priv->dri1.allow_batchbuffer) {
 		DRM_ERROR("Batchbuffer ioctl disabled\n");
@@ -682,9 +684,8 @@ static int i915_cmdbuffer(struct drm_device *dev, void *data,
 			  struct drm_file *file_priv)
 {
 	drm_i915_private_t *dev_priv = (drm_i915_private_t *) dev->dev_private;
-	struct drm_i915_master_private *master_priv = dev->primary->master->driver_priv;
-	drm_i915_sarea_t *sarea_priv = (drm_i915_sarea_t *)
-	    master_priv->sarea_priv;
+	struct drm_i915_master_private *master_priv;
+	drm_i915_sarea_t *sarea_priv;
 	drm_i915_cmdbuffer_t *cmdbuf = data;
 	struct drm_clip_rect *cliprects = NULL;
 	void *batch_data;
@@ -695,6 +696,9 @@ static int i915_cmdbuffer(struct drm_device *dev, void *data,
 
 	if (drm_core_check_feature(dev, DRIVER_MODESET))
 		return -ENODEV;
+
+	master_priv = dev->primary->master->driver_priv;
+	sarea_priv = (drm_i915_sarea_t *) master_priv->sarea_priv;
 
 	RING_LOCK_TEST_WITH_RETURN(dev, file_priv);
 
@@ -1442,7 +1446,7 @@ static void i915_kick_out_firmware_fb(struct drm_i915_private *dev_priv)
 
 static void i915_dump_device_info(struct drm_i915_private *dev_priv)
 {
-	const struct intel_device_info *info = dev_priv->info;
+	const struct intel_device_info *info = &dev_priv->info;
 
 #define PRINT_S(name) "%s"
 #define SEP_EMPTY
@@ -1473,7 +1477,7 @@ static void i915_dump_device_info(struct drm_i915_private *dev_priv)
 int i915_driver_load(struct drm_device *dev, unsigned long flags)
 {
 	struct drm_i915_private *dev_priv;
-	struct intel_device_info *info;
+	struct intel_device_info *info, *device_info;
 	int ret = 0, mmio_bar, mmio_size;
 	uint32_t aperture_size;
 
@@ -1496,7 +1500,10 @@ int i915_driver_load(struct drm_device *dev, unsigned long flags)
 
 	dev->dev_private = (void *)dev_priv;
 	dev_priv->dev = dev;
-	dev_priv->info = info;
+
+	/* copy initial configuration to dev_priv->info */
+	device_info = (struct intel_device_info *)&dev_priv->info;
+	*device_info = *info;
 
 	spin_lock_init(&dev_priv->irq_lock);
 	spin_lock_init(&dev_priv->gpu_error.lock);
@@ -1609,6 +1616,22 @@ int i915_driver_load(struct drm_device *dev, unsigned long flags)
 		goto out_mtrrfree;
 	}
 
+	/* intel_crtc_page_flip runs with the mode_config mutex having been
+	 * taken in the DRM layer.  It synchronously waits for pending unpin
+	 * work items while holding this mutex.  Therefore this queue cannot
+	 * contain work items that take this mutex, such as HPD event
+	 * handling, or we deadlock.  There is also no reason for flipping to
+	 * wait on such events.  Therefore put flip unpinning in its own
+	 * work queue.
+	 */
+	dev_priv->flip_unpin_wq = alloc_ordered_workqueue("i915", 0);
+	if (dev_priv->flip_unpin_wq == NULL) {
+		DRM_ERROR("Failed to create flip unpin workqueue.\n");
+		destroy_workqueue(dev_priv->wq);
+		ret = -ENOMEM;
+		goto out_mtrrfree;
+	}
+
 	intel_irq_init(dev);
 	intel_uncore_sanitize(dev);
 
@@ -1687,6 +1710,7 @@ out_gem_unload:
 	intel_teardown_mchbar(dev);
 	pm_qos_remove_request(&dev_priv->pm_qos);
 	destroy_workqueue(dev_priv->wq);
+	destroy_workqueue(dev_priv->flip_unpin_wq);
 out_mtrrfree:
 	arch_phys_wc_del(dev_priv->gtt.mtrr);
 	io_mapping_free(dev_priv->gtt.mappable);
@@ -1769,7 +1793,8 @@ int i915_driver_unload(struct drm_device *dev)
 	intel_opregion_fini(dev);
 
 	if (drm_core_check_feature(dev, DRIVER_MODESET)) {
-		/* Flush any outstanding unpin_work. */
+		/* Flush any outstanding unpin, HPD, etc. work. */
+		flush_workqueue(dev_priv->flip_unpin_wq);
 		flush_workqueue(dev_priv->wq);
 
 		mutex_lock(&dev->struct_mutex);
@@ -1793,6 +1818,7 @@ int i915_driver_unload(struct drm_device *dev)
 	intel_teardown_mchbar(dev);
 
 	destroy_workqueue(dev_priv->wq);
+	destroy_workqueue(dev_priv->flip_unpin_wq);
 	pm_qos_remove_request(&dev_priv->pm_qos);
 
 	dev_priv->gtt.base.cleanup(&dev_priv->gtt.base);

@@ -19,23 +19,24 @@
  * more details.
  */
 
-#include <linux/kernel.h>
-#include <linux/module.h>
+#include <linux/clk/tegra.h>
+#include <linux/clockchips.h>
 #include <linux/cpuidle.h>
 #include <linux/cpu_pm.h>
-#include <linux/clockchips.h>
-#include <linux/clk/tegra.h>
+#include <linux/kernel.h>
+#include <linux/module.h>
+
+#include <soc/tegra/flowctrl.h>
+#include <soc/tegra/iomap.h>
 
 #include <asm/cpuidle.h>
 #include <asm/proc-fns.h>
-#include <asm/suspend.h>
 #include <asm/smp_plat.h>
+#include <asm/suspend.h>
 
+#include "irq.h"
 #include "pm.h"
 #include "sleep.h"
-#include "iomap.h"
-#include "irq.h"
-#include "flowctrl.h"
 
 #ifdef CONFIG_PM_SLEEP
 static bool abort_flag;

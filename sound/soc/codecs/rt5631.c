@@ -188,7 +188,7 @@ static unsigned int mic_bst_tlv[] = {
 static int rt5631_dmic_get(struct snd_kcontrol *kcontrol,
 		struct snd_ctl_elem_value *ucontrol)
 {
-	struct snd_soc_codec *codec = snd_kcontrol_chip(kcontrol);
+	struct snd_soc_codec *codec = snd_soc_kcontrol_codec(kcontrol);
 	struct rt5631_priv *rt5631 = snd_soc_codec_get_drvdata(codec);
 
 	ucontrol->value.integer.value[0] = rt5631->dmic_used_flag;
@@ -199,7 +199,7 @@ static int rt5631_dmic_get(struct snd_kcontrol *kcontrol,
 static int rt5631_dmic_put(struct snd_kcontrol *kcontrol,
 		struct snd_ctl_elem_value *ucontrol)
 {
-	struct snd_soc_codec *codec = snd_kcontrol_chip(kcontrol);
+	struct snd_soc_codec *codec = snd_soc_kcontrol_codec(kcontrol);
 	struct rt5631_priv *rt5631 = snd_soc_codec_get_drvdata(codec);
 
 	rt5631->dmic_used_flag = ucontrol->value.integer.value[0];
@@ -1585,15 +1585,6 @@ static int rt5631_probe(struct snd_soc_codec *codec)
 {
 	struct rt5631_priv *rt5631 = snd_soc_codec_get_drvdata(codec);
 	unsigned int val;
-	int ret;
-
-	codec->control_data = rt5631->regmap;
-
-	ret = snd_soc_codec_set_cache_io(codec, 8, 16, SND_SOC_REGMAP);
-	if (ret != 0) {
-		dev_err(codec->dev, "Failed to set cache I/O: %d\n", ret);
-		return ret;
-	}
 
 	val = rt5631_read_index(codec, RT5631_ADDA_MIXER_INTL_REG3);
 	if (val & 0x0002)

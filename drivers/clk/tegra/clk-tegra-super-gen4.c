@@ -44,7 +44,9 @@ static const char *sclk_parents[] = { "clk_m", "pll_c_out1", "pll_p_out4",
 
 static const char *cclk_g_parents[] = { "clk_m", "pll_c", "clk_32k", "pll_m",
 					"pll_p", "pll_p_out4", "unused",
-					"unused", "pll_x" };
+					"unused", "pll_x", "unused", "unused",
+					"unused", "unused", "unused", "unused",
+					"dfllCPU_out" };
 
 static const char *cclk_lp_parents[] = { "clk_m", "pll_c", "clk_32k", "pll_m",
 					 "pll_p", "pll_p_out4", "unused",
@@ -111,6 +113,7 @@ void __init tegra_super_clk_gen4_init(void __iomem *clk_base,
 					clk_base + CCLKG_BURST_POLICY,
 					0, 4, 0, 0, NULL);
 		*dt_clk = clk;
+		clk_register_clkdev(clk, "cclk_g", NULL);
 	}
 
 	/* CCLKLP */
@@ -122,6 +125,7 @@ void __init tegra_super_clk_gen4_init(void __iomem *clk_base,
 					clk_base + CCLKLP_BURST_POLICY,
 					TEGRA_DIVIDER_2, 4, 8, 9, NULL);
 		*dt_clk = clk;
+		clk_register_clkdev(clk, "cclk_lp", NULL);
 	}
 
 	tegra_sclk_init(clk_base, tegra_clks);

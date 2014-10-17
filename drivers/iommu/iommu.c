@@ -35,6 +35,10 @@ static struct kset *iommu_group_kset;
 static struct ida iommu_group_ida;
 static struct mutex iommu_group_mutex;
 
+struct iommu_callback_data {
+	const struct iommu_ops *ops;
+};
+
 struct iommu_group {
 	struct kobject kobj;
 	struct kobject *devices_kobj;
@@ -516,7 +520,8 @@ EXPORT_SYMBOL_GPL(iommu_group_id);
 
 static int add_iommu_group(struct device *dev, void *data)
 {
-	struct iommu_ops *ops = data;
+	struct iommu_callback_data *cb = data;
+	const struct iommu_ops *ops = cb->ops;
 
 	if (!ops->add_device)
 		return -ENODEV;
@@ -532,7 +537,7 @@ static int iommu_bus_notifier(struct notifier_block *nb,
 			      unsigned long action, void *data)
 {
 	struct device *dev = data;
-	struct iommu_ops *ops = dev->bus->iommu_ops;
+	const struct iommu_ops *ops = dev->bus->iommu_ops;
 	struct iommu_group *group;
 	unsigned long group_action = 0;
 
@@ -540,14 +545,23 @@ static int iommu_bus_notifier(struct notifier_block *nb,
 	 * ADD/DEL call into iommu driver ops if provided, which may
 	 * result in ADD/DEL notifiers to group->notifier
 	 */
-	if (action == BUS_NOTIFY_ADD_DEVICE) {
+	switch (action) {
+	case BUS_NOTIFY_ADD_DEVICE:
 		if (ops->add_device)
 			return ops->add_device(dev);
-	} else if (action == BUS_NOTIFY_DEL_DEVICE) {
+	case BUS_NOTIFY_DEL_DEVICE:
 		if (ops->remove_device && dev->iommu_group) {
 			ops->remove_device(dev);
 			return 0;
 		}
+	case BUS_NOTIFY_BOUND_DRIVER:
+		if (ops->bound_driver)
+			ops->bound_driver(dev);
+		break;
+	case BUS_NOTIFY_UNBIND_DRIVER:
+		if (ops->unbind_driver)
+			ops->unbind_driver(dev);
+		break;
 	}
 
 	/*
@@ -585,10 +599,14 @@ static struct notifier_block iommu_bus_nb = {
 	.notifier_call = iommu_bus_notifier,
 };
 
-static void iommu_bus_init(struct bus_type *bus, struct iommu_ops *ops)
+static void iommu_bus_init(struct bus_type *bus, const struct iommu_ops *ops)
 {
+	struct iommu_callback_data cb = {
+		.ops = ops,
+	};
+
 	bus_register_notifier(bus, &iommu_bus_nb);
-	bus_for_each_dev(bus, NULL, ops, add_iommu_group);
+	bus_for_each_dev(bus, NULL, &cb, add_iommu_group);
 }
 
 /**
@@ -604,7 +622,7 @@ static void iommu_bus_init(struct bus_type *bus, struct iommu_ops *ops)
  * is set up. With this function the iommu-driver can set the iommu-ops
  * afterwards.
  */
-int bus_set_iommu(struct bus_type *bus, struct iommu_ops *ops)
+int bus_set_iommu(struct bus_type *bus, const struct iommu_ops *ops)
 {
 	if (bus->iommu_ops != NULL)
 		return -EBUSY;

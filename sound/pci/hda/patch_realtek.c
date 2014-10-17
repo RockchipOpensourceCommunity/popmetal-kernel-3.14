@@ -259,6 +259,13 @@ static void set_eapd(struct hda_codec *codec, hda_nid_t nid, int on)
 {
 	if (get_wcaps_type(get_wcaps(codec, nid)) != AC_WID_PIN)
 		return;
+
+	/* delay de-assert of eapd to allow biasing of amp
+	 * inputs to settle avoiding an audible 'pop'.
+	 */
+	if ((nid == 0x14) && codec->subsystem_id == 0x144dc0a7)
+		msleep(25);
+
 	if (snd_hda_query_pin_caps(codec, nid) & AC_PINCAP_EAPD)
 		snd_hda_codec_write(codec, nid, 0, AC_VERB_SET_EAPD_BTLENABLE,
 				    on ? 2 : 0);
@@ -2850,7 +2857,7 @@ static void alc283_shutup(struct hda_codec *codec)
 
 	if (hp_pin_sense)
 		msleep(100);
-	snd_hda_shutup_pins(codec);
+	alc_eapd_shutup(codec);
 	alc_write_coef_idx(codec, 0x43, 0x9614);
 }
 
@@ -3830,6 +3837,16 @@ static void alc290_fixup_mono_speakers(struct hda_codec *codec,
 	}
 }
 
+static void alc283_fixup_dac_wcaps(struct hda_codec *codec,
+	const struct hda_fixup *fix, int action)
+{
+	switch (action) {
+	case HDA_FIXUP_ACT_PRE_PROBE:
+		snd_hda_override_wcaps(codec, 0x03, 0);
+		break;
+	}
+}
+
 /* for hda_fixup_thinkpad_acpi() */
 #include "thinkpad_helper.c"
 
@@ -3888,6 +3905,7 @@ enum {
 	ALC269_FIXUP_THINKPAD_ACPI,
 	ALC255_FIXUP_DELL1_MIC_NO_PRESENCE,
 	ALC255_FIXUP_HEADSET_MODE,
+	ALC283_FIXUP_DAC_WCAPS,
 };
 
 static const struct hda_fixup alc269_fixups[] = {
@@ -4268,6 +4286,11 @@ static const struct hda_fixup alc269_fixups[] = {
 		.type = HDA_FIXUP_FUNC,
 		.v.func = alc_fixup_headset_mode_alc255,
 	},
+	[ALC283_FIXUP_DAC_WCAPS] = {
+		/* Disable the second DAC, ensuring only DAC1 is used. */
+		.type = HDA_FIXUP_FUNC,
+		.v.func = alc283_fixup_dac_wcaps,
+	},
 };
 
 static const struct snd_pci_quirk alc269_fixup_tbl[] = {
@@ -4497,6 +4520,7 @@ static const struct hda_model_fixup alc269_fixup_models[] = {
 	{.id = ALC269_FIXUP_DELL2_MIC_NO_PRESENCE, .name = "dell-headset-dock"},
 	{.id = ALC283_FIXUP_CHROME_BOOK, .name = "alc283-chrome"},
 	{.id = ALC283_FIXUP_SENSE_COMBO_JACK, .name = "alc283-sense-combo"},
+	{.id = ALC283_FIXUP_DAC_WCAPS, .name = "alc283-dac-wcaps"},
 	{}
 };
 

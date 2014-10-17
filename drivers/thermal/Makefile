@@ -13,6 +13,7 @@ thermal_sys-$(CONFIG_THERMAL_OF)		+= of-thermal.o
 thermal_sys-$(CONFIG_THERMAL_GOV_FAIR_SHARE)	+= fair_share.o
 thermal_sys-$(CONFIG_THERMAL_GOV_STEP_WISE)	+= step_wise.o
 thermal_sys-$(CONFIG_THERMAL_GOV_USER_SPACE)	+= user_space.o
+obj-$(CONFIG_THERMAL_GOV_PID)			+= pid_thermal_gov.o
 
 # cpufreq cooling
 thermal_sys-$(CONFIG_CPU_THERMAL)	+= cpu_cooling.o
@@ -31,3 +32,7 @@ obj-$(CONFIG_INTEL_POWERCLAMP)	+= intel_powerclamp.o
 obj-$(CONFIG_X86_PKG_TEMP_THERMAL)	+= x86_pkg_temp_thermal.o
 obj-$(CONFIG_TI_SOC_THERMAL)	+= ti-soc-thermal/
 obj-$(CONFIG_ACPI_INT3403_THERMAL)	+= int3403_thermal.o
+obj-$(CONFIG_TEGRA_SOCTHERM)	+= tegra_soctherm.o
+obj-$(CONFIG_TEGRA_SOCTHERM)	+= tegra_soctherm.o tegra_soctherm_fuse.o
+obj-$(CONFIG_TEGRA124_SOCTHERM)	+= tegra124_soctherm.o
+obj-$(CONFIG_TEGRA132_SOCTHERM)	+= tegra132_soctherm.o

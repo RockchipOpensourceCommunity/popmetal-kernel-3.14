@@ -52,6 +52,10 @@
 /* Battery power unit: 0 means mW, 1 means mA */
 #define ACPI_BATTERY_POWER_UNIT_MA	1
 
+#define ACPI_BATTERY_STATE_DISCHARGING	0x1
+#define ACPI_BATTERY_STATE_CHARGING	0x2
+#define ACPI_BATTERY_STATE_CRITICAL	0x4
+
 #define _COMPONENT		ACPI_BATTERY_COMPONENT
 
 ACPI_MODULE_NAME("battery");
@@ -152,7 +156,7 @@ static int acpi_battery_get_state(struct acpi_battery *battery);
 
 static int acpi_battery_is_charged(struct acpi_battery *battery)
 {
-	/* either charging or discharging */
+	/* charging, discharging or critical low */
 	if (battery->state != 0)
 		return 0;
 
@@ -187,9 +191,9 @@ static int acpi_battery_get_property(struct power_supply *psy,
 		return -ENODEV;
 	switch (psp) {
 	case POWER_SUPPLY_PROP_STATUS:
-		if (battery->state & 0x01)
+		if (battery->state & ACPI_BATTERY_STATE_DISCHARGING)
 			val->intval = POWER_SUPPLY_STATUS_DISCHARGING;
-		else if (battery->state & 0x02)
+		else if (battery->state & ACPI_BATTERY_STATE_CHARGING)
 			val->intval = POWER_SUPPLY_STATUS_CHARGING;
 		else if (acpi_battery_is_charged(battery))
 			val->intval = POWER_SUPPLY_STATUS_FULL;
@@ -252,6 +256,17 @@ static int acpi_battery_get_property(struct power_supply *psy,
 		else
 			val->intval = 0;
 		break;
+	case POWER_SUPPLY_PROP_CAPACITY_LEVEL:
+		if (battery->state & ACPI_BATTERY_STATE_CRITICAL)
+			val->intval = POWER_SUPPLY_CAPACITY_LEVEL_CRITICAL;
+		else if (test_bit(ACPI_BATTERY_ALARM_PRESENT, &battery->flags) &&
+			(battery->capacity_now <= battery->alarm))
+			val->intval = POWER_SUPPLY_CAPACITY_LEVEL_LOW;
+		else if (acpi_battery_is_charged(battery))
+			val->intval = POWER_SUPPLY_CAPACITY_LEVEL_FULL;
+		else
+			val->intval = POWER_SUPPLY_CAPACITY_LEVEL_NORMAL;
+		break;
 	case POWER_SUPPLY_PROP_MODEL_NAME:
 		val->strval = battery->model_number;
 		break;
@@ -279,6 +294,7 @@ static enum power_supply_property charge_battery_props[] = {
 	POWER_SUPPLY_PROP_CHARGE_FULL,
 	POWER_SUPPLY_PROP_CHARGE_NOW,
 	POWER_SUPPLY_PROP_CAPACITY,
+	POWER_SUPPLY_PROP_CAPACITY_LEVEL,
 	POWER_SUPPLY_PROP_MODEL_NAME,
 	POWER_SUPPLY_PROP_MANUFACTURER,
 	POWER_SUPPLY_PROP_SERIAL_NUMBER,
@@ -296,6 +312,7 @@ static enum power_supply_property energy_battery_props[] = {
 	POWER_SUPPLY_PROP_ENERGY_FULL,
 	POWER_SUPPLY_PROP_ENERGY_NOW,
 	POWER_SUPPLY_PROP_CAPACITY,
+	POWER_SUPPLY_PROP_CAPACITY_LEVEL,
 	POWER_SUPPLY_PROP_MODEL_NAME,
 	POWER_SUPPLY_PROP_MANUFACTURER,
 	POWER_SUPPLY_PROP_SERIAL_NUMBER,
@@ -580,7 +597,8 @@ static int sysfs_add_battery(struct acpi_battery *battery)
 	battery->bat.type = POWER_SUPPLY_TYPE_BATTERY;
 	battery->bat.get_property = acpi_battery_get_property;
 
-	result = power_supply_register(&battery->device->dev, &battery->bat);
+	result = power_supply_register_no_ws(&battery->device->dev, &battery->bat);
+
 	if (result)
 		return result;
 	return device_create_file(battery->bat.dev, &alarm_attr);
@@ -695,7 +713,19 @@ static int acpi_battery_update(struct acpi_battery *battery)
 			return result;
 	}
 	result = acpi_battery_get_state(battery);
+	if (result)
+		return result;
 	acpi_battery_quirks(battery);
+
+	/*
+	 * Wakeup the system if battery is critical low
+	 * or lower than the alarm level
+	 */
+	if ((battery->state & ACPI_BATTERY_STATE_CRITICAL) ||
+	    (test_bit(ACPI_BATTERY_ALARM_PRESENT, &battery->flags) &&
+            (battery->capacity_now <= battery->alarm)))
+		pm_wakeup_event(&battery->device->dev, 0);
+
 	return result;
 }
 
@@ -799,6 +829,8 @@ static int acpi_battery_add(struct acpi_device *device)
 	battery->pm_nb.notifier_call = battery_notify;
 	register_pm_notifier(&battery->pm_nb);
 
+	device_init_wakeup(&device->dev, 1);
+
 	return result;
 
 fail:
@@ -815,6 +847,7 @@ static int acpi_battery_remove(struct acpi_device *device)
 
 	if (!device || !acpi_driver_data(device))
 		return -EINVAL;
+	device_init_wakeup(&device->dev, 0);
 	battery = acpi_driver_data(device);
 	unregister_pm_notifier(&battery->pm_nb);
 	sysfs_remove_battery(battery);

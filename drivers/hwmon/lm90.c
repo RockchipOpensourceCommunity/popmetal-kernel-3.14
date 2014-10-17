@@ -96,6 +96,8 @@
 #include <linux/sysfs.h>
 #include <linux/interrupt.h>
 #include <linux/regulator/consumer.h>
+#include <linux/of.h>
+#include <linux/thermal.h>
 
 /*
  * Addresses to scan
@@ -118,6 +120,13 @@ static const unsigned short normal_i2c[] = {
 
 enum chips { lm90, adm1032, lm99, lm86, max6657, max6659, adt7461, max6680,
 	max6646, w83l771, max6696, sa56004, g781, tmp451 };
+
+enum sensor_id {
+	LOCAL = 0,
+	REMOTE,
+	REMOTE2,
+	SENSOR_ID_END,
+};
 
 /*
  * The LM90 registers
@@ -365,7 +374,10 @@ enum lm90_temp11_reg_index {
  */
 
 struct lm90_data {
+	struct i2c_client *client;
 	struct device *hwmon_dev;
+	const struct attribute_group *groups[6];
+	struct thermal_zone_device *tz[SENSOR_ID_END];
 	struct mutex update_lock;
 	struct regulator *regulator;
 	char valid; /* zero until following fields are valid */
@@ -471,20 +483,29 @@ static int lm90_read16(struct i2c_client *client, u8 regh, u8 regl, u16 *value)
  * various registers have different meanings as a result of selecting a
  * non-default remote channel.
  */
-static inline void lm90_select_remote_channel(struct i2c_client *client,
-					      struct lm90_data *data,
-					      int channel)
+static inline int lm90_select_remote_channel(struct i2c_client *client,
+					     struct lm90_data *data,
+					     int channel)
 {
 	u8 config;
+	int err;
 
 	if (data->kind == max6696) {
 		lm90_read_reg(client, LM90_REG_R_CONFIG1, &config);
 		config &= ~0x08;
 		if (channel)
 			config |= 0x08;
-		i2c_smbus_write_byte_data(client, LM90_REG_W_CONFIG1,
-					  config);
+		err = i2c_smbus_write_byte_data(client, LM90_REG_W_CONFIG1,
+						config);
+		if (err < 0) {
+			dev_err(&client->dev,
+				"Failed to select remote channel %d, err %d\n",
+				channel, err);
+			return err;
+		}
 	}
+
+	return 0;
 }
 
 /*
@@ -513,8 +534,8 @@ static void lm90_set_convrate(struct i2c_client *client, struct lm90_data *data,
 
 static struct lm90_data *lm90_update_device(struct device *dev)
 {
-	struct i2c_client *client = to_i2c_client(dev);
-	struct lm90_data *data = i2c_get_clientdata(client);
+	struct lm90_data *data = dev_get_drvdata(dev);
+	struct i2c_client *client = data->client;
 	unsigned long next_update;
 
 	mutex_lock(&data->update_lock);
@@ -757,29 +778,34 @@ static u16 temp_to_u16_adt7461(struct lm90_data *data, long val)
  * Sysfs stuff
  */
 
-static ssize_t show_temp8(struct device *dev, struct device_attribute *devattr,
-			  char *buf)
+static int read_temp8(struct device *dev, int index)
 {
-	struct sensor_device_attribute *attr = to_sensor_dev_attr(devattr);
 	struct lm90_data *data = lm90_update_device(dev);
 	int temp;
 
 	if (data->kind == adt7461 || data->kind == tmp451)
-		temp = temp_from_u8_adt7461(data, data->temp8[attr->index]);
+		temp = temp_from_u8_adt7461(data, data->temp8[index]);
 	else if (data->kind == max6646)
-		temp = temp_from_u8(data->temp8[attr->index]);
+		temp = temp_from_u8(data->temp8[index]);
 	else
-		temp = temp_from_s8(data->temp8[attr->index]);
+		temp = temp_from_s8(data->temp8[index]);
 
 	/* +16 degrees offset for temp2 for the LM99 */
-	if (data->kind == lm99 && attr->index == 3)
+	if (data->kind == lm99 && index == 3)
 		temp += 16000;
 
-	return sprintf(buf, "%d\n", temp);
+	return temp;
 }
 
-static ssize_t set_temp8(struct device *dev, struct device_attribute *devattr,
-			 const char *buf, size_t count)
+static ssize_t show_temp8(struct device *dev, struct device_attribute *devattr,
+			  char *buf)
+{
+	struct sensor_device_attribute *attr = to_sensor_dev_attr(devattr);
+
+	return sprintf(buf, "%d\n", read_temp8(dev, attr->index));
+}
+
+static int write_temp8(struct device *dev, int index, long val)
 {
 	static const u8 reg[TEMP8_REG_NUM] = {
 		LM90_REG_W_LOCAL_LOW,
@@ -792,10 +818,37 @@ static ssize_t set_temp8(struct device *dev, struct device_attribute *devattr,
 		MAX6659_REG_W_REMOTE_EMERG,
 	};
 
+	struct lm90_data *data = dev_get_drvdata(dev);
+	struct i2c_client *client = data->client;
+	int err;
+
+	/* +16 degrees offset for temp2 for the LM99 */
+	if (data->kind == lm99 && index == 3)
+		val -= 16000;
+
+	mutex_lock(&data->update_lock);
+	if (data->kind == adt7461 || data->kind == tmp451)
+		data->temp8[index] = temp_to_u8_adt7461(data, val);
+	else if (data->kind == max6646)
+		data->temp8[index] = temp_to_u8(val);
+	else
+		data->temp8[index] = temp_to_s8(val);
+
+	if ((err = lm90_select_remote_channel(client, data, index >= 6)) ||
+	    (err = i2c_smbus_write_byte_data(client, reg[index],
+					     data->temp8[index])) ||
+	    (err = lm90_select_remote_channel(client, data, 0)))
+		dev_err(dev, "write_temp8 failed, err %d\n", err);
+	mutex_unlock(&data->update_lock);
+
+	return err;
+}
+
+static ssize_t set_temp8(struct device *dev, struct device_attribute *devattr,
+			 const char *buf, size_t count)
+{
 	struct sensor_device_attribute *attr = to_sensor_dev_attr(devattr);
-	struct i2c_client *client = to_i2c_client(dev);
-	struct lm90_data *data = i2c_get_clientdata(client);
-	int nr = attr->index;
+	int index = attr->index;
 	long val;
 	int err;
 
@@ -803,49 +856,59 @@ static ssize_t set_temp8(struct device *dev, struct device_attribute *devattr,
 	if (err < 0)
 		return err;
 
-	/* +16 degrees offset for temp2 for the LM99 */
-	if (data->kind == lm99 && attr->index == 3)
-		val -= 16000;
+	err = write_temp8(dev, index, val);
+	if (err < 0)
+		return err;
 
-	mutex_lock(&data->update_lock);
-	if (data->kind == adt7461 || data->kind == tmp451)
-		data->temp8[nr] = temp_to_u8_adt7461(data, val);
-	else if (data->kind == max6646)
-		data->temp8[nr] = temp_to_u8(val);
-	else
-		data->temp8[nr] = temp_to_s8(val);
-
-	lm90_select_remote_channel(client, data, nr >= 6);
-	i2c_smbus_write_byte_data(client, reg[nr], data->temp8[nr]);
-	lm90_select_remote_channel(client, data, 0);
-
-	mutex_unlock(&data->update_lock);
 	return count;
+}
+
+static int read_temp11(struct device *dev, int index)
+{
+	struct lm90_data *data = lm90_update_device(dev);
+	int temp;
+
+	if (data->kind == adt7461 || data->kind == tmp451)
+		temp = temp_from_u16_adt7461(data, data->temp11[index]);
+	else if (data->kind == max6646)
+		temp = temp_from_u16(data->temp11[index]);
+	else
+		temp = temp_from_s16(data->temp11[index]);
+
+	/* +16 degrees offset for temp2 for the LM99 */
+	if (data->kind == lm99 && index <= 2)
+		temp += 16000;
+
+	return temp;
 }
 
 static ssize_t show_temp11(struct device *dev, struct device_attribute *devattr,
 			   char *buf)
 {
 	struct sensor_device_attribute_2 *attr = to_sensor_dev_attr_2(devattr);
-	struct lm90_data *data = lm90_update_device(dev);
-	int temp;
 
-	if (data->kind == adt7461 || data->kind == tmp451)
-		temp = temp_from_u16_adt7461(data, data->temp11[attr->index]);
-	else if (data->kind == max6646)
-		temp = temp_from_u16(data->temp11[attr->index]);
-	else
-		temp = temp_from_s16(data->temp11[attr->index]);
-
-	/* +16 degrees offset for temp2 for the LM99 */
-	if (data->kind == lm99 &&  attr->index <= 2)
-		temp += 16000;
-
-	return sprintf(buf, "%d\n", temp);
+	return sprintf(buf, "%d\n", read_temp11(dev, attr->index));
 }
 
-static ssize_t set_temp11(struct device *dev, struct device_attribute *devattr,
-			  const char *buf, size_t count)
+static int lm90_read_local_temp(void *dev, long *temp)
+{
+	*temp = read_temp11(dev, 4);
+	return 0;
+}
+
+static int lm90_read_remote_temp(void *dev, long *temp)
+{
+	*temp = read_temp11(dev, 0);
+	return 0;
+}
+
+static int lm90_read_remote2_temp(void *dev, long *temp)
+{
+	*temp = read_temp11(dev, 5);
+	return 0;
+}
+
+static int write_temp11(struct device *dev, int nr, int index, long val)
 {
 	struct {
 		u8 high;
@@ -859,17 +922,9 @@ static ssize_t set_temp11(struct device *dev, struct device_attribute *devattr,
 		{ LM90_REG_W_REMOTE_HIGHH, LM90_REG_W_REMOTE_HIGHL, 1 }
 	};
 
-	struct sensor_device_attribute_2 *attr = to_sensor_dev_attr_2(devattr);
-	struct i2c_client *client = to_i2c_client(dev);
-	struct lm90_data *data = i2c_get_clientdata(client);
-	int nr = attr->nr;
-	int index = attr->index;
-	long val;
+	struct lm90_data *data = dev_get_drvdata(dev);
+	struct i2c_client *client = data->client;
 	int err;
-
-	err = kstrtol(buf, 10, &val);
-	if (err < 0)
-		return err;
 
 	/* +16 degrees offset for temp2 for the LM99 */
 	if (data->kind == lm99 && index <= 2)
@@ -885,15 +940,50 @@ static ssize_t set_temp11(struct device *dev, struct device_attribute *devattr,
 	else
 		data->temp11[index] = temp_to_s8(val) << 8;
 
-	lm90_select_remote_channel(client, data, reg[nr].channel);
-	i2c_smbus_write_byte_data(client, reg[nr].high,
-				  data->temp11[index] >> 8);
-	if (data->flags & LM90_HAVE_REM_LIMIT_EXT)
-		i2c_smbus_write_byte_data(client, reg[nr].low,
-					  data->temp11[index] & 0xff);
-	lm90_select_remote_channel(client, data, 0);
+	err = lm90_select_remote_channel(client, data, reg[nr].channel);
+	if (err)
+		goto error;
+
+	err = i2c_smbus_write_byte_data(client, reg[nr].high,
+					data->temp11[index] >> 8);
+	if (err)
+		goto error;
+
+	if (data->flags & LM90_HAVE_REM_LIMIT_EXT) {
+		err = i2c_smbus_write_byte_data(client, reg[nr].low,
+						data->temp11[index] & 0xff);
+		if (err)
+			goto error;
+	}
+
+	err = lm90_select_remote_channel(client, data, 0);
+
+error:
+	if (err)
+		dev_err(dev, "write_temp11 failed, err %d\n", err);
 
 	mutex_unlock(&data->update_lock);
+
+	return err;
+}
+
+static ssize_t set_temp11(struct device *dev, struct device_attribute *devattr,
+			  const char *buf, size_t count)
+{
+	struct sensor_device_attribute_2 *attr = to_sensor_dev_attr_2(devattr);
+	int nr = attr->nr;
+	int index = attr->index;
+	long val;
+	int err;
+
+	err = kstrtol(buf, 10, &val);
+	if (err < 0)
+		return err;
+
+	err = write_temp11(dev, nr, index, val);
+	if (err < 0)
+		return err;
+
 	return count;
 }
 
@@ -922,8 +1012,8 @@ static ssize_t show_temphyst(struct device *dev,
 static ssize_t set_temphyst(struct device *dev, struct device_attribute *dummy,
 			    const char *buf, size_t count)
 {
-	struct i2c_client *client = to_i2c_client(dev);
-	struct lm90_data *data = i2c_get_clientdata(client);
+	struct lm90_data *data = dev_get_drvdata(dev);
+	struct i2c_client *client = data->client;
 	long val;
 	int err;
 	int temp;
@@ -976,8 +1066,8 @@ static ssize_t set_update_interval(struct device *dev,
 				   struct device_attribute *attr,
 				   const char *buf, size_t count)
 {
-	struct i2c_client *client = to_i2c_client(dev);
-	struct lm90_data *data = i2c_get_clientdata(client);
+	struct lm90_data *data = dev_get_drvdata(dev);
+	struct i2c_client *client = data->client;
 	unsigned long val;
 	int err;
 
@@ -1055,6 +1145,15 @@ static struct attribute *lm90_attributes[] = {
 
 static const struct attribute_group lm90_group = {
 	.attrs = lm90_attributes,
+};
+
+static struct attribute *lm90_temp2_offset_attributes[] = {
+	&sensor_dev_attr_temp2_offset.dev_attr.attr,
+	NULL
+};
+
+static const struct attribute_group lm90_temp2_offset_group = {
+	.attrs = lm90_temp2_offset_attributes,
 };
 
 /*
@@ -1393,22 +1492,6 @@ static int lm90_detect(struct i2c_client *client,
 	return 0;
 }
 
-static void lm90_remove_files(struct i2c_client *client, struct lm90_data *data)
-{
-	struct device *dev = &client->dev;
-
-	if (data->flags & LM90_HAVE_TEMP3)
-		sysfs_remove_group(&dev->kobj, &lm90_temp3_group);
-	if (data->flags & LM90_HAVE_EMERGENCY_ALARM)
-		sysfs_remove_group(&dev->kobj, &lm90_emergency_alarm_group);
-	if (data->flags & LM90_HAVE_EMERGENCY)
-		sysfs_remove_group(&dev->kobj, &lm90_emergency_group);
-	if (data->flags & LM90_HAVE_OFFSET)
-		device_remove_file(dev, &sensor_dev_attr_temp2_offset.dev_attr);
-	device_remove_file(dev, &dev_attr_pec);
-	sysfs_remove_group(&dev->kobj, &lm90_group);
-}
-
 static void lm90_restore_conf(struct i2c_client *client, struct lm90_data *data)
 {
 	/* Restore initial configuration */
@@ -1418,10 +1501,9 @@ static void lm90_restore_conf(struct i2c_client *client, struct lm90_data *data)
 				  data->config_orig);
 }
 
-static void lm90_init_client(struct i2c_client *client)
+static void lm90_init_client(struct i2c_client *client, struct lm90_data *data)
 {
 	u8 config, convrate;
-	struct lm90_data *data = i2c_get_clientdata(client);
 
 	if (lm90_read_reg(client, LM90_REG_R_CONVRATE, &convrate) < 0) {
 		dev_warn(&client->dev, "Failed to read convrate register!\n");
@@ -1519,6 +1601,7 @@ static int lm90_probe(struct i2c_client *client,
 	struct i2c_adapter *adapter = to_i2c_adapter(dev->parent);
 	struct lm90_data *data;
 	struct regulator *regulator;
+	int groups = 0;
 	int err;
 
 	regulator = devm_regulator_get(dev, "vcc");
@@ -1527,15 +1610,15 @@ static int lm90_probe(struct i2c_client *client,
 
 	err = regulator_enable(regulator);
 	if (err < 0) {
-		dev_err(&client->dev,
-			"Failed to enable regulator: %d\n", err);
+		dev_err(dev, "Failed to enable regulator: %d\n", err);
 		return err;
 	}
 
-	data = devm_kzalloc(&client->dev, sizeof(struct lm90_data), GFP_KERNEL);
+	data = devm_kzalloc(dev, sizeof(struct lm90_data), GFP_KERNEL);
 	if (!data)
 		return -ENOMEM;
 
+	data->client = client;
 	i2c_set_clientdata(client, data);
 	mutex_init(&data->update_lock);
 
@@ -1562,44 +1645,34 @@ static int lm90_probe(struct i2c_client *client,
 	data->max_convrate = lm90_params[data->kind].max_convrate;
 
 	/* Initialize the LM90 chip */
-	lm90_init_client(client);
+	lm90_init_client(client, data);
 
 	/* Register sysfs hooks */
-	err = sysfs_create_group(&dev->kobj, &lm90_group);
-	if (err)
-		goto exit_restore;
+	data->groups[groups++] = &lm90_group;
+
+	if (data->flags & LM90_HAVE_OFFSET)
+		data->groups[groups++] = &lm90_temp2_offset_group;
+
+	if (data->flags & LM90_HAVE_EMERGENCY)
+		data->groups[groups++] = &lm90_emergency_group;
+
+	if (data->flags & LM90_HAVE_EMERGENCY_ALARM)
+		data->groups[groups++] = &lm90_emergency_alarm_group;
+
+	if (data->flags & LM90_HAVE_TEMP3)
+		data->groups[groups++] = &lm90_temp3_group;
+
 	if (client->flags & I2C_CLIENT_PEC) {
 		err = device_create_file(dev, &dev_attr_pec);
 		if (err)
-			goto exit_remove_files;
-	}
-	if (data->flags & LM90_HAVE_OFFSET) {
-		err = device_create_file(dev,
-					&sensor_dev_attr_temp2_offset.dev_attr);
-		if (err)
-			goto exit_remove_files;
-	}
-	if (data->flags & LM90_HAVE_EMERGENCY) {
-		err = sysfs_create_group(&dev->kobj, &lm90_emergency_group);
-		if (err)
-			goto exit_remove_files;
-	}
-	if (data->flags & LM90_HAVE_EMERGENCY_ALARM) {
-		err = sysfs_create_group(&dev->kobj,
-					 &lm90_emergency_alarm_group);
-		if (err)
-			goto exit_remove_files;
-	}
-	if (data->flags & LM90_HAVE_TEMP3) {
-		err = sysfs_create_group(&dev->kobj, &lm90_temp3_group);
-		if (err)
-			goto exit_remove_files;
+			goto exit_restore;
 	}
 
-	data->hwmon_dev = hwmon_device_register(dev);
+	data->hwmon_dev = hwmon_device_register_with_groups(dev, client->name,
+							    data, data->groups);
 	if (IS_ERR(data->hwmon_dev)) {
 		err = PTR_ERR(data->hwmon_dev);
-		goto exit_remove_files;
+		goto exit_remove_pec;
 	}
 
 	if (client->irq) {
@@ -1614,12 +1687,39 @@ static int lm90_probe(struct i2c_client *client,
 		}
 	}
 
+	data->tz[LOCAL] = thermal_zone_of_sensor_register(&client->dev,
+							LOCAL,
+							&client->dev,
+							lm90_read_local_temp,
+							NULL, NULL);
+	if (IS_ERR(data->tz[LOCAL]))
+		data->tz[LOCAL] = NULL;
+
+	data->tz[REMOTE] = thermal_zone_of_sensor_register(&client->dev,
+							REMOTE,
+							&client->dev,
+							lm90_read_remote_temp,
+							NULL, NULL);
+	if (IS_ERR(data->tz[REMOTE]))
+		data->tz[REMOTE] = NULL;
+
+	if (data->flags & LM90_HAVE_TEMP3) {
+		data->tz[REMOTE2] = thermal_zone_of_sensor_register(
+							&client->dev,
+							REMOTE2,
+							&client->dev,
+							lm90_read_remote2_temp,
+							NULL, NULL);
+		if (IS_ERR(data->tz[REMOTE2]))
+			data->tz[REMOTE2] = NULL;
+	}
+
 	return 0;
 
 exit_unregister:
 	hwmon_device_unregister(data->hwmon_dev);
-exit_remove_files:
-	lm90_remove_files(client, data);
+exit_remove_pec:
+	device_remove_file(dev, &dev_attr_pec);
 exit_restore:
 	lm90_restore_conf(client, data);
 	regulator_disable(data->regulator);
@@ -1629,10 +1729,13 @@ exit_restore:
 
 static int lm90_remove(struct i2c_client *client)
 {
+	int i;
 	struct lm90_data *data = i2c_get_clientdata(client);
 
+	for (i = 0; i < SENSOR_ID_END; i++)
+		thermal_zone_of_sensor_unregister(&client->dev, data->tz[i]);
 	hwmon_device_unregister(data->hwmon_dev);
-	lm90_remove_files(client, data);
+	device_remove_file(&client->dev, &dev_attr_pec);
 	lm90_restore_conf(client, data);
 	regulator_disable(data->regulator);
 

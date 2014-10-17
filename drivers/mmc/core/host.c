@@ -12,14 +12,18 @@
  *  MMC host class device management
  */
 
+#include <linux/kernel.h>
+#include <linux/clk.h>
 #include <linux/device.h>
 #include <linux/err.h>
+#include <linux/gpio/consumer.h>
 #include <linux/idr.h>
 #include <linux/of.h>
 #include <linux/of_gpio.h>
 #include <linux/pagemap.h>
 #include <linux/export.h>
 #include <linux/leds.h>
+#include <linux/regulator/consumer.h>
 #include <linux/slab.h>
 #include <linux/suspend.h>
 
@@ -312,7 +316,7 @@ int mmc_of_parse(struct mmc_host *host)
 	u32 bus_width;
 	bool explicit_inv_wp, gpio_inv_wp = false;
 	enum of_gpio_flags flags;
-	int len, ret, gpio;
+	int i, len, ret, gpio;
 
 	if (!host->parent || !host->parent->of_node)
 		return 0;
@@ -415,10 +419,54 @@ int mmc_of_parse(struct mmc_host *host)
 	if (explicit_inv_wp ^ gpio_inv_wp)
 		host->caps2 |= MMC_CAP2_RO_ACTIVE_HIGH;
 
+	/* Parse card power/reset/clock control */
+	if (of_find_property(np, "card-reset-gpios", NULL)) {
+		struct gpio_desc *gpd;
+		for (i = 0; i < ARRAY_SIZE(host->card_reset_gpios); i++) {
+			gpd = devm_gpiod_get_index(host->parent, "card-reset", i);
+			if (IS_ERR(gpd))
+				break;
+			gpiod_direction_output(gpd, 0);
+			host->card_reset_gpios[i] = gpd;
+		}
+
+		gpd = devm_gpiod_get_index(host->parent, "card-reset", ARRAY_SIZE(host->card_reset_gpios));
+		if (!IS_ERR(gpd)) {
+			dev_warn(host->parent, "More reset gpios than we can handle");
+			gpiod_put(gpd);
+		}
+	}
+
+	host->card_clk = of_clk_get_by_name(np, "card_ext_clock");
+	if (IS_ERR(host->card_clk)) {
+		if (PTR_ERR(host->card_clk) == -EPROBE_DEFER) {
+			ret = -EPROBE_DEFER;
+			goto out;
+		}
+
+		host->card_clk = NULL;
+	}
+
+	host->card_regulator = regulator_get(host->parent, "card-external-vcc");
+	if (PTR_ERR(host->card_regulator) == -EPROBE_DEFER) {
+		ret = -EPROBE_DEFER;
+		goto out;
+	}
+
 	if (of_find_property(np, "cap-sd-highspeed", &len))
 		host->caps |= MMC_CAP_SD_HIGHSPEED;
 	if (of_find_property(np, "cap-mmc-highspeed", &len))
 		host->caps |= MMC_CAP_MMC_HIGHSPEED;
+	if (of_find_property(np, "sd-uhs-sdr12", &len))
+		host->caps |= MMC_CAP_UHS_SDR12;
+	if (of_find_property(np, "sd-uhs-sdr25", &len))
+		host->caps |= MMC_CAP_UHS_SDR25;
+	if (of_find_property(np, "sd-uhs-sdr50", &len))
+		host->caps |= MMC_CAP_UHS_SDR50;
+	if (of_find_property(np, "sd-uhs-sdr104", &len))
+		host->caps |= MMC_CAP_UHS_SDR104;
+	if (of_find_property(np, "sd-uhs-ddr50", &len))
+		host->caps |= MMC_CAP_UHS_DDR50;
 	if (of_find_property(np, "cap-power-off-card", &len))
 		host->caps |= MMC_CAP_POWER_OFF_CARD;
 	if (of_find_property(np, "cap-sdio-irq", &len))
@@ -429,6 +477,14 @@ int mmc_of_parse(struct mmc_host *host)
 		host->pm_caps |= MMC_PM_KEEP_POWER;
 	if (of_find_property(np, "enable-sdio-wakeup", &len))
 		host->pm_caps |= MMC_PM_WAKE_SDIO_IRQ;
+	if (of_find_property(np, "mmc-ddr-1_8v", &len))
+		host->caps |= MMC_CAP_1_8V_DDR;
+	if (of_find_property(np, "mmc-ddr-1_2v", &len))
+		host->caps |= MMC_CAP_1_2V_DDR;
+	if (of_find_property(np, "mmc-hs200-1_8v", &len))
+		host->caps2 |= MMC_CAP2_HS200_1_8V_SDR;
+	if (of_find_property(np, "mmc-hs200-1_2v", &len))
+		host->caps2 |= MMC_CAP2_HS200_1_2V_SDR;
 
 	return 0;
 
@@ -448,8 +504,8 @@ EXPORT_SYMBOL(mmc_of_parse);
  */
 struct mmc_host *mmc_alloc_host(int extra, struct device *dev)
 {
-	int err;
 	struct mmc_host *host;
+	int of_id = -1, id = -1;
 
 	host = kzalloc(sizeof(struct mmc_host) + extra, GFP_KERNEL);
 	if (!host)
@@ -459,12 +515,26 @@ struct mmc_host *mmc_alloc_host(int extra, struct device *dev)
 	host->rescan_disable = 1;
 	idr_preload(GFP_KERNEL);
 	spin_lock(&mmc_host_lock);
-	err = idr_alloc(&mmc_host_idr, host, 0, 0, GFP_NOWAIT);
-	if (err >= 0)
-		host->index = err;
+
+	if (dev->of_node)
+		of_id = of_alias_get_id(dev->of_node, "mmc");
+
+	if (of_id >= 0) {
+		id = idr_alloc(&mmc_host_idr, host, of_id, of_id + 1,
+				GFP_NOWAIT);
+		if (id < 0)
+			dev_warn(dev, "/aliases ID %d not available\n", of_id);
+	}
+
+	if (id < 0)
+		id = idr_alloc(&mmc_host_idr, host, 0, 0, GFP_NOWAIT);
+
+	if (id >= 0)
+		host->index = id;
+
 	spin_unlock(&mmc_host_lock);
 	idr_preload_end();
-	if (err < 0)
+	if (id < 0)
 		goto free;
 
 	dev_set_name(&host->class_dev, "mmc%d", host->index);

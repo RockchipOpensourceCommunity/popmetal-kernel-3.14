@@ -391,7 +391,7 @@ static void wm8904_set_drc(struct snd_soc_codec *codec)
 static int wm8904_put_drc_enum(struct snd_kcontrol *kcontrol,
 			       struct snd_ctl_elem_value *ucontrol)
 {
-	struct snd_soc_codec *codec = snd_kcontrol_chip(kcontrol);
+	struct snd_soc_codec *codec = snd_soc_kcontrol_codec(kcontrol);
 	struct wm8904_priv *wm8904 = snd_soc_codec_get_drvdata(codec);
 	struct wm8904_pdata *pdata = wm8904->pdata;
 	int value = ucontrol->value.integer.value[0];
@@ -409,7 +409,7 @@ static int wm8904_put_drc_enum(struct snd_kcontrol *kcontrol,
 static int wm8904_get_drc_enum(struct snd_kcontrol *kcontrol,
 			       struct snd_ctl_elem_value *ucontrol)
 {
-	struct snd_soc_codec *codec = snd_kcontrol_chip(kcontrol);
+	struct snd_soc_codec *codec = snd_soc_kcontrol_codec(kcontrol);
 	struct wm8904_priv *wm8904 = snd_soc_codec_get_drvdata(codec);
 
 	ucontrol->value.enumerated.item[0] = wm8904->drc_cfg;
@@ -462,7 +462,7 @@ static void wm8904_set_retune_mobile(struct snd_soc_codec *codec)
 static int wm8904_put_retune_mobile_enum(struct snd_kcontrol *kcontrol,
 					 struct snd_ctl_elem_value *ucontrol)
 {
-	struct snd_soc_codec *codec = snd_kcontrol_chip(kcontrol);
+	struct snd_soc_codec *codec = snd_soc_kcontrol_codec(kcontrol);
 	struct wm8904_priv *wm8904 = snd_soc_codec_get_drvdata(codec);
 	struct wm8904_pdata *pdata = wm8904->pdata;
 	int value = ucontrol->value.integer.value[0];
@@ -480,7 +480,7 @@ static int wm8904_put_retune_mobile_enum(struct snd_kcontrol *kcontrol,
 static int wm8904_get_retune_mobile_enum(struct snd_kcontrol *kcontrol,
 					 struct snd_ctl_elem_value *ucontrol)
 {
-	struct snd_soc_codec *codec = snd_kcontrol_chip(kcontrol);
+	struct snd_soc_codec *codec = snd_soc_kcontrol_codec(kcontrol);
 	struct wm8904_priv *wm8904 = snd_soc_codec_get_drvdata(codec);
 
 	ucontrol->value.enumerated.item[0] = wm8904->retune_mobile_cfg;
@@ -520,7 +520,7 @@ static int wm8904_set_deemph(struct snd_soc_codec *codec)
 static int wm8904_get_deemph(struct snd_kcontrol *kcontrol,
 			     struct snd_ctl_elem_value *ucontrol)
 {
-	struct snd_soc_codec *codec = snd_kcontrol_chip(kcontrol);
+	struct snd_soc_codec *codec = snd_soc_kcontrol_codec(kcontrol);
 	struct wm8904_priv *wm8904 = snd_soc_codec_get_drvdata(codec);
 
 	ucontrol->value.enumerated.item[0] = wm8904->deemph;
@@ -530,7 +530,7 @@ static int wm8904_get_deemph(struct snd_kcontrol *kcontrol,
 static int wm8904_put_deemph(struct snd_kcontrol *kcontrol,
 			      struct snd_ctl_elem_value *ucontrol)
 {
-	struct snd_soc_codec *codec = snd_kcontrol_chip(kcontrol);
+	struct snd_soc_codec *codec = snd_soc_kcontrol_codec(kcontrol);
 	struct wm8904_priv *wm8904 = snd_soc_codec_get_drvdata(codec);
 	int deemph = ucontrol->value.enumerated.item[0];
 
@@ -568,7 +568,7 @@ static const struct soc_enum hpf_mode =
 static int wm8904_adc_osr_put(struct snd_kcontrol *kcontrol,
 			      struct snd_ctl_elem_value *ucontrol)
 {
-	struct snd_soc_codec *codec = snd_kcontrol_chip(kcontrol);
+	struct snd_soc_codec *codec = snd_soc_kcontrol_codec(kcontrol);
 	unsigned int val;
 	int ret;
 
@@ -1981,7 +1981,7 @@ static void wm8904_handle_retune_mobile_pdata(struct snd_soc_codec *codec)
 	dev_dbg(codec->dev, "Allocated %d unique ReTune Mobile names\n",
 		wm8904->num_retune_mobile_texts);
 
-	wm8904->retune_mobile_enum.max = wm8904->num_retune_mobile_texts;
+	wm8904->retune_mobile_enum.items = wm8904->num_retune_mobile_texts;
 	wm8904->retune_mobile_enum.texts = wm8904->retune_mobile_texts;
 
 	ret = snd_soc_add_codec_controls(codec, &control, 1);
@@ -2022,7 +2022,7 @@ static void wm8904_handle_pdata(struct snd_soc_codec *codec)
 		for (i = 0; i < pdata->num_drc_cfgs; i++)
 			wm8904->drc_texts[i] = pdata->drc_cfgs[i].name;
 
-		wm8904->drc_enum.max = pdata->num_drc_cfgs;
+		wm8904->drc_enum.items = pdata->num_drc_cfgs;
 		wm8904->drc_enum.texts = wm8904->drc_texts;
 
 		ret = snd_soc_add_codec_controls(codec, &control, 1);
@@ -2047,9 +2047,6 @@ static void wm8904_handle_pdata(struct snd_soc_codec *codec)
 static int wm8904_probe(struct snd_soc_codec *codec)
 {
 	struct wm8904_priv *wm8904 = snd_soc_codec_get_drvdata(codec);
-	int ret;
-
-	codec->control_data = wm8904->regmap;
 
 	switch (wm8904->devtype) {
 	case WM8904:
@@ -2061,12 +2058,6 @@ static int wm8904_probe(struct snd_soc_codec *codec)
 		dev_err(codec->dev, "Unknown device type %d\n",
 			wm8904->devtype);
 		return -EINVAL;
-	}
-
-	ret = snd_soc_codec_set_cache_io(codec, 8, 16, SND_SOC_REGMAP);
-	if (ret != 0) {
-		dev_err(codec->dev, "Failed to set cache I/O: %d\n", ret);
-		return ret;
 	}
 
 	wm8904_handle_pdata(codec);

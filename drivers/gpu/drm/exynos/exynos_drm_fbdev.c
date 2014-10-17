@@ -233,7 +233,7 @@ out:
 	return ret;
 }
 
-static struct drm_fb_helper_funcs exynos_drm_fb_helper_funcs = {
+static const struct drm_fb_helper_funcs exynos_drm_fb_helper_funcs = {
 	.fb_probe =	exynos_drm_fbdev_create,
 };
 
@@ -253,7 +253,8 @@ int exynos_drm_fbdev_init(struct drm_device *dev)
 		return -ENOMEM;
 
 	private->fb_helper = helper = &fbdev->drm_fb_helper;
-	helper->funcs = &exynos_drm_fb_helper_funcs;
+
+	drm_fb_helper_prepare(dev, helper, &exynos_drm_fb_helper_funcs);
 
 	num_crtc = dev->mode_config.num_crtc;
 
@@ -354,7 +355,5 @@ void exynos_drm_fbdev_restore_mode(struct drm_device *dev)
 	if (!private || !private->fb_helper)
 		return;
 
-	drm_modeset_lock_all(dev);
-	drm_fb_helper_restore_fbdev_mode(private->fb_helper);
-	drm_modeset_unlock_all(dev);
+	drm_fb_helper_restore_fbdev_mode_unlocked(private->fb_helper);
 }

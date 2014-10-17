@@ -192,7 +192,7 @@ config GPIO_MSM_V1
 
 config GPIO_MSM_V2
 	tristate "Qualcomm MSM GPIO v2"
-	depends on GPIOLIB && OF && ARCH_MSM
+	depends on GPIOLIB && OF && ARCH_QCOM
 	help
 	  Say yes here to support the GPIO interface on ARM v7 based
 	  Qualcomm MSM chips.  Most of the pins on the MSM can be
@@ -721,6 +721,12 @@ config GPIO_RDC321X
 	help
 	  Support for the RDC R321x SoC GPIOs over southbridge
 	  PCI configuration space.
+
+config GPIO_NM10
+        tristate "Intel NM10 GPIO controller support"
+        depends on PCI
+        help
+          Say Y here to support Intel's NM10 LPC based GPIO controller.
 
 comment "SPI GPIO expanders:"
 

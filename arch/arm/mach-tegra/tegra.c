@@ -16,40 +16,40 @@
  *
  */
 
-#include <linux/kernel.h>
-#include <linux/init.h>
-#include <linux/platform_device.h>
-#include <linux/serial_8250.h>
 #include <linux/clk.h>
+#include <linux/clk/tegra.h>
 #include <linux/dma-mapping.h>
+#include <linux/init.h>
+#include <linux/io.h>
+#include <linux/irqchip.h>
 #include <linux/irqdomain.h>
-#include <linux/of.h>
+#include <linux/kernel.h>
 #include <linux/of_address.h>
 #include <linux/of_fdt.h>
+#include <linux/of.h>
 #include <linux/of_platform.h>
 #include <linux/pda_power.h>
-#include <linux/io.h>
+#include <linux/platform_device.h>
+#include <linux/serial_8250.h>
 #include <linux/slab.h>
 #include <linux/sys_soc.h>
 #include <linux/usb/tegra_usb_phy.h>
-#include <linux/clk/tegra.h>
-#include <linux/irqchip.h>
+
+#include <soc/tegra/fuse.h>
+#include <soc/tegra/iomap.h>
+#include <soc/tegra/pmc.h>
 
 #include <asm/hardware/cache-l2x0.h>
-#include <asm/mach-types.h>
 #include <asm/mach/arch.h>
 #include <asm/mach/time.h>
+#include <asm/mach-types.h>
 #include <asm/setup.h>
 #include <asm/trusted_foundations.h>
 
-#include "apbio.h"
 #include "board.h"
 #include "common.h"
 #include "cpuidle.h"
-#include "fuse.h"
-#include "iomap.h"
 #include "irq.h"
-#include "pmc.h"
 #include "pm.h"
 #include "reset.h"
 #include "sleep.h"
@@ -100,17 +100,12 @@ static void __init tegra_init_cache(void)
 static void __init tegra_init_early(void)
 {
 	of_register_trusted_foundations();
-	tegra_apb_io_init();
-	tegra_init_fuse();
 	tegra_cpu_reset_handler_init();
 	tegra_init_cache();
-	tegra_powergate_init();
-	tegra_hotplug_init();
 }
 
 static void __init tegra_dt_init_irq(void)
 {
-	tegra_pmc_init_irq();
 	tegra_init_irq();
 	irqchip_init();
 	tegra_legacy_irq_syscore_init();
@@ -122,17 +117,14 @@ static void __init tegra_dt_init(void)
 	struct soc_device *soc_dev;
 	struct device *parent = NULL;
 
-	tegra_pmc_init();
-
-	tegra_clocks_apply_init_table();
-
 	soc_dev_attr = kzalloc(sizeof(*soc_dev_attr), GFP_KERNEL);
 	if (!soc_dev_attr)
 		goto out;
 
 	soc_dev_attr->family = kasprintf(GFP_KERNEL, "Tegra");
-	soc_dev_attr->revision = kasprintf(GFP_KERNEL, "%d", tegra_revision);
-	soc_dev_attr->soc_id = kasprintf(GFP_KERNEL, "%d", tegra_chip_id);
+	soc_dev_attr->revision = kasprintf(GFP_KERNEL, "%d",
+					   tegra_sku_info.revision);
+	soc_dev_attr->soc_id = kasprintf(GFP_KERNEL, "%u", tegra_get_chip_id());
 
 	soc_dev = soc_device_register(soc_dev_attr);
 	if (IS_ERR(soc_dev)) {
@@ -172,7 +164,6 @@ static void __init tegra_dt_init_late(void)
 
 	tegra_init_suspend();
 	tegra_cpuidle_init();
-	tegra_powergate_debugfs_init();
 
 	for (i = 0; i < ARRAY_SIZE(board_init_funcs); i++) {
 		if (of_machine_is_compatible(board_init_funcs[i].machine)) {
@@ -197,6 +188,5 @@ DT_MACHINE_START(TEGRA_DT, "NVIDIA Tegra SoC (Flattened Device Tree)")
 	.init_irq	= tegra_dt_init_irq,
 	.init_machine	= tegra_dt_init,
 	.init_late	= tegra_dt_init_late,
-	.restart	= tegra_pmc_restart,
 	.dt_compat	= tegra_dt_board_compat,
 MACHINE_END

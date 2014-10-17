@@ -296,7 +296,15 @@ static int mmc_blk_open(struct block_device *bdev, fmode_t mode)
 			check_disk_change(bdev);
 		ret = 0;
 
-		if ((mode & FMODE_WRITE) && md->read_only) {
+		/*
+		 * Reject read/write access to the RPMB partition.  It should
+		 * only be accessed through ioctls.
+		 */
+		if ((mode & (FMODE_READ | FMODE_WRITE)) &&
+		    md->area_type & MMC_BLK_DATA_AREA_RPMB) {
+			mmc_blk_put(md);
+			ret = -EACCES;
+		} else if ((mode & FMODE_WRITE) && md->read_only) {
 			mmc_blk_put(md);
 			ret = -EROFS;
 		}
@@ -2055,7 +2063,8 @@ static struct mmc_blk_data *mmc_blk_alloc_req(struct mmc_card *card,
 	 * index anymore so we keep track of a name index.
 	 */
 	if (!subname) {
-		md->name_idx = find_first_zero_bit(name_use, max_devices);
+		md->name_idx = find_next_zero_bit(name_use, max_devices,
+				card->host->index);
 		__set_bit(md->name_idx, name_use);
 	} else
 		md->name_idx = ((struct mmc_blk_data *)

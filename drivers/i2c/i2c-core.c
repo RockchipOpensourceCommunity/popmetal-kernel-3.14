@@ -42,6 +42,7 @@
 #include <linux/of.h>
 #include <linux/of_device.h>
 #include <linux/of_irq.h>
+#include <linux/clk/clk-conf.h>
 #include <linux/completion.h>
 #include <linux/hardirq.h>
 #include <linux/irqflags.h>
@@ -259,10 +260,17 @@ static int i2c_device_probe(struct device *dev)
 					client->flags & I2C_CLIENT_WAKE);
 	dev_dbg(dev, "probe\n");
 
-	acpi_dev_pm_attach(&client->dev, true);
-	status = driver->probe(client, i2c_match_id(driver->id_table, client));
-	if (status)
-		acpi_dev_pm_detach(&client->dev, true);
+	status = of_clk_set_defaults(dev->of_node, false);
+	if (status < 0)
+		return status;
+
+	status = dev_pm_domain_attach(&client->dev, true);
+	if (status != -EPROBE_DEFER) {
+		status = driver->probe(client, i2c_match_id(driver->id_table,
+					client));
+		if (status)
+			dev_pm_domain_detach(&client->dev, true);
+	}
 
 	return status;
 }
@@ -282,7 +290,7 @@ static int i2c_device_remove(struct device *dev)
 		status = driver->remove(client);
 	}
 
-	acpi_dev_pm_detach(&client->dev, true);
+	dev_pm_domain_detach(&client->dev, true);
 	return status;
 }
 
@@ -1112,6 +1120,7 @@ static acpi_status acpi_i2c_add_device(acpi_handle handle, u32 level,
 	struct i2c_board_info info;
 	struct acpi_device *adev;
 	int ret;
+	unsigned short addrs[] = {0, I2C_CLIENT_END};
 
 	if (acpi_bus_get_device(handle, &adev))
 		return AE_OK;
@@ -1131,8 +1140,9 @@ static acpi_status acpi_i2c_add_device(acpi_handle handle, u32 level,
 		return AE_OK;
 
 	adev->power.flags.ignore_parent = true;
+	addrs[0] = info.addr;
 	strlcpy(info.type, dev_name(&adev->dev), sizeof(info.type));
-	if (!i2c_new_device(adapter, &info)) {
+	if (!i2c_new_probed_device(adapter, &info, addrs, NULL)) {
 		adev->power.flags.ignore_parent = false;
 		dev_err(&adapter->dev,
 			"failed to add I2C device %s from ACPI\n",

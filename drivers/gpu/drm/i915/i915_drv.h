@@ -58,7 +58,8 @@ enum pipe {
 	PIPE_A = 0,
 	PIPE_B,
 	PIPE_C,
-	I915_MAX_PIPES
+	_PIPE_EDP,
+	I915_MAX_PIPES = _PIPE_EDP
 };
 #define pipe_name(p) ((p) + 'A')
 
@@ -66,7 +67,8 @@ enum transcoder {
 	TRANSCODER_A = 0,
 	TRANSCODER_B,
 	TRANSCODER_C,
-	TRANSCODER_EDP = 0xF,
+	TRANSCODER_EDP,
+	I915_MAX_TRANSCODERS
 };
 #define transcoder_name(t) ((t) + 'A')
 
@@ -326,7 +328,7 @@ struct drm_i915_error_state {
 	u64 bbaddr[I915_NUM_RINGS];
 	u32 fault_reg[I915_NUM_RINGS];
 	u32 done_reg;
-	u32 faddr[I915_NUM_RINGS];
+	u64 faddr[I915_NUM_RINGS];
 	u64 fence[I915_MAX_NUM_FENCES];
 	struct timeval time;
 	struct drm_i915_error_ring {
@@ -507,6 +509,13 @@ struct intel_device_info {
 	u8 gen;
 	u8 ring_mask; /* Rings supported by the HW */
 	DEV_INFO_FOR_EACH_FLAG(DEFINE_FLAG, SEP_SEMICOLON);
+	/* Register offsets for the various display pipes and transcoders */
+	int pipe_offsets[I915_MAX_TRANSCODERS];
+	int trans_offsets[I915_MAX_TRANSCODERS];
+	int dpll_offsets[I915_MAX_PIPES];
+	int dpll_md_offsets[I915_MAX_PIPES];
+	int palette_offsets[I915_MAX_PIPES];
+	int cursor_offsets[I915_MAX_PIPES];
 };
 
 #undef DEFINE_FLAG
@@ -564,12 +573,12 @@ struct i915_address_space {
 				     enum i915_cache_level level,
 				     bool valid); /* Create a valid PTE */
 	void (*clear_range)(struct i915_address_space *vm,
-			    unsigned int first_entry,
-			    unsigned int num_entries,
+			    uint64_t start,
+			    uint64_t length,
 			    bool use_scratch);
 	void (*insert_entries)(struct i915_address_space *vm,
 			       struct sg_table *st,
-			       unsigned int first_entry,
+			       uint64_t start,
 			       enum i915_cache_level cache_level);
 	void (*cleanup)(struct i915_address_space *vm);
 };
@@ -603,19 +612,20 @@ struct i915_gtt {
 };
 #define gtt_total_entries(gtt) ((gtt).base.total >> PAGE_SHIFT)
 
+#define GEN8_LEGACY_PDPS 4
 struct i915_hw_ppgtt {
 	struct i915_address_space base;
 	unsigned num_pd_entries;
 	union {
 		struct page **pt_pages;
-		struct page *gen8_pt_pages;
+		struct page **gen8_pt_pages[GEN8_LEGACY_PDPS];
 	};
 	struct page *pd_pages;
 	int num_pd_pages;
 	int num_pt_pages;
 	union {
 		uint32_t pd_offset;
-		dma_addr_t pd_dma_addr[4];
+		dma_addr_t pd_dma_addr[GEN8_LEGACY_PDPS];
 	};
 	union {
 		dma_addr_t *pt_dma_addr;
@@ -716,6 +726,7 @@ struct i915_fbc {
 struct i915_psr {
 	bool sink_support;
 	bool source_ok;
+	bool setup_done;
 };
 
 enum intel_pch {
@@ -900,20 +911,37 @@ struct i915_suspend_saved_registers {
 	u32 savePCH_PORT_HOTPLUG;
 };
 
+struct intel_rps_ei_calc {
+	u32 cz_ts_ei;
+	u32 render_ei_c0;
+	u32 media_ei_c0;
+};
+
 struct intel_gen6_power_mgmt {
 	/* work and pm_iir are protected by dev_priv->irq_lock */
 	struct work_struct work;
 	u32 pm_iir;
 
-	/* The below variables an all the rps hw state are protected by
-	 * dev->struct mutext. */
-	u8 cur_delay;
-	u8 min_delay;
-	u8 max_delay;
-	u8 rpe_delay;
-	u8 rp1_delay;
-	u8 rp0_delay;
-	u8 hw_max;
+	/* Frequencies are stored in potentially platform dependent multiples.
+	 * In other words, *_freq needs to be multiplied by X to be interesting.
+	 * Soft limits are those which are used for the dynamic reclocking done
+	 * by the driver (raise frequencies under heavy loads, and lower for
+	 * lighter loads). Hard limits are those imposed by the hardware.
+	 *
+	 * A distinction is made for overclocking, which is never enabled by
+	 * default, and is considered to be above the hard limit if it's
+	 * possible at all.
+	 */
+	u8 cur_freq;		/* Current frequency (cached, may not == HW) */
+	u8 min_freq_softlimit;	/* Minimum frequency permitted by the driver */
+	u8 max_freq_softlimit;	/* Max frequency permitted by the driver */
+	u8 max_freq;		/* Maximum frequency, RP0 if not overclocking */
+	u8 min_freq;		/* AKA RPn. Minimum frequency */
+	u8 efficient_freq;	/* AKA RPe. Pre-determined balanced frequency */
+	u8 rp1_freq;		/* "less than" RP0 power/freqency */
+	u8 rp0_freq;		/* Non-overclocked max frequency. */
+
+	u32 ei_interrupt_count;
 
 	int last_adj;
 	enum { LOW_POWER, BETWEEN, HIGH_POWER } power;
@@ -1188,6 +1216,16 @@ struct intel_vbt_data {
 	struct {
 		u16 pwm_freq_hz;
 		bool active_low_pwm;
+
+		/* NB: We expect this to be an absolute value (percentage)
+		 * indicating the minimum duty cycle. This value is provided by
+		 * the panel spec, and should be provided in some way/shape/form
+		 * from VBIOS.  It's unclear as of this point whether or not
+		 * this is the proper way.
+		 *
+		 * Example, 5 = 5% = .05
+		 */
+		u8 min_duty_cycle_percentage;
 	} backlight;
 
 	/* MIPI DSI */
@@ -1332,7 +1370,7 @@ typedef struct drm_i915_private {
 	struct drm_device *dev;
 	struct kmem_cache *slab;
 
-	const struct intel_device_info *info;
+	const struct intel_device_info info;
 
 	int relative_constants_mode;
 
@@ -1379,6 +1417,7 @@ typedef struct drm_i915_private {
 	};
 	u32 gt_irq_mask;
 	u32 pm_irq_mask;
+	u32 pm_rps_events;
 
 	struct work_struct hotplug_work;
 	bool enable_hotplug_processing;
@@ -1423,6 +1462,7 @@ typedef struct drm_i915_private {
 	 * result in deadlocks.
 	 */
 	struct workqueue_struct *wq;
+	struct workqueue_struct *flip_unpin_wq;
 
 	/* Display functions */
 	struct drm_i915_display_funcs display;
@@ -1475,6 +1515,13 @@ typedef struct drm_i915_private {
 	/* gen6+ rps state */
 	struct intel_gen6_power_mgmt rps;
 
+	/* rps wa up ei calculation */
+	struct intel_rps_ei_calc rps_up_ei;
+
+	/* rps wa down ei calculation */
+	struct intel_rps_ei_calc rps_down_ei;
+
+
 	/* ilk-only ips/rps state. Everything in here is protected by the global
 	 * mchdev_lock in intel_pm.c */
 	struct intel_ilk_power_mgmt ips;
@@ -1500,6 +1547,7 @@ typedef struct drm_i915_private {
 
 	struct drm_property *broadcast_rgb_property;
 	struct drm_property *force_audio_property;
+	struct drm_property *psr_property;
 
 	uint32_t hw_context_size;
 	struct list_head context_list;
@@ -1551,6 +1599,11 @@ enum hdmi_force_audio {
 	HDMI_AUDIO_OFF,			/* force turn off HDMI audio */
 	HDMI_AUDIO_AUTO,		/* trust EDID */
 	HDMI_AUDIO_ON,			/* force turn on HDMI audio */
+};
+
+enum psr_state {
+	EDP_PSR_ON,
+	EDP_PSR_OFF
 };
 
 #define I915_GTT_OFFSET_NONE ((u32)-1)
@@ -1755,7 +1808,7 @@ struct drm_i915_file_private {
 	atomic_t rps_wait_boost;
 };
 
-#define INTEL_INFO(dev)	(to_i915(dev)->info)
+#define INTEL_INFO(dev)	(&to_i915(dev)->info)
 
 #define IS_I830(dev)		((dev)->pdev->device == 0x3577)
 #define IS_845G(dev)		((dev)->pdev->device == 0x2562)
@@ -1816,13 +1869,13 @@ struct drm_i915_file_private {
 #define BSD_RING		(1<<VCS)
 #define BLT_RING		(1<<BCS)
 #define VEBOX_RING		(1<<VECS)
-#define HAS_BSD(dev)            (INTEL_INFO(dev)->ring_mask & BSD_RING)
-#define HAS_BLT(dev)            (INTEL_INFO(dev)->ring_mask & BLT_RING)
-#define HAS_VEBOX(dev)            (INTEL_INFO(dev)->ring_mask & VEBOX_RING)
-#define HAS_LLC(dev)            (INTEL_INFO(dev)->has_llc)
-#define HAS_WT(dev)            (IS_HASWELL(dev) && to_i915(dev)->ellc_size)
+#define HAS_BSD(dev)		(INTEL_INFO(dev)->ring_mask & BSD_RING)
+#define HAS_BLT(dev)		(INTEL_INFO(dev)->ring_mask & BLT_RING)
+#define HAS_VEBOX(dev)		(INTEL_INFO(dev)->ring_mask & VEBOX_RING)
+#define HAS_LLC(dev)		(INTEL_INFO(dev)->has_llc)
+#define HAS_WT(dev)		((IS_HASWELL(dev) || IS_BROADWELL(dev)) && \
+				 to_i915(dev)->ellc_size)
 #define I915_NEED_GFX_HWS(dev)	(INTEL_INFO(dev)->need_gfx_hws)
-
 #define HAS_HW_CONTEXTS(dev)	(INTEL_INFO(dev)->gen >= 6)
 #define HAS_ALIASING_PPGTT(dev)	(INTEL_INFO(dev)->gen >=6 && !IS_VALLEYVIEW(dev))
 
@@ -1945,8 +1998,12 @@ extern void intel_console_resume(struct work_struct *work);
 void i915_queue_hangcheck(struct drm_device *dev);
 void i915_handle_error(struct drm_device *dev, bool wedged);
 
+void gen6_set_pm_mask(struct drm_i915_private *dev_priv, u32 pm_iir,
+							int new_delay);
 extern void intel_irq_init(struct drm_device *dev);
 extern void intel_hpd_init(struct drm_device *dev);
+extern void vlv_set_power_well(struct drm_i915_private *dev_priv, u32 val);
+
 
 extern void intel_uncore_sanitize(struct drm_device *dev);
 extern void intel_uncore_early_sanitize(struct drm_device *dev);
@@ -2277,6 +2334,8 @@ static inline void i915_gem_chipset_flush(struct drm_device *dev)
 }
 
 
+/* i915_gem_render_state.c */
+int i915_gem_render_state_init(struct intel_ring_buffer *ring);
 /* i915_gem_evict.c */
 int __must_check i915_gem_evict_something(struct drm_device *dev,
 					  struct i915_address_space *vm,
@@ -2371,6 +2430,9 @@ static inline bool intel_gmbus_is_port_valid(unsigned port)
 {
 	return (port >= GMBUS_PORT_SSC && port <= GMBUS_PORT_DPD);
 }
+extern void intel_i2c_register(struct drm_device *dev,
+			       struct drm_connector *connector,
+			       int ddc_bus);
 
 extern struct i2c_adapter *intel_gmbus_get_adapter(
 		struct drm_i915_private *dev_priv, unsigned port);

@@ -237,6 +237,8 @@ extern int of_n_addr_cells(struct device_node *np);
 extern int of_n_size_cells(struct device_node *np);
 extern const struct of_device_id *of_match_node(
 	const struct of_device_id *matches, const struct device_node *node);
+extern const struct of_device_id *of_match_machine(
+	const struct of_device_id *matches);
 extern int of_modalias_node(struct device_node *node, char *modalias, int len);
 extern void of_print_phandle_args(const char *msg, const struct of_phandle_args *args);
 extern struct device_node *of_parse_phandle(const struct device_node *np,
@@ -250,6 +252,14 @@ extern int of_parse_phandle_with_fixed_args(const struct device_node *np,
 	struct of_phandle_args *out_args);
 extern int of_count_phandle_with_args(const struct device_node *np,
 	const char *list_name, const char *cells_name);
+
+extern const __be32 *of_phandle_iter_init(const struct device_node *np,
+					  const char *list_name,
+					  const __be32 **end);
+extern const __be32 *of_phandle_iter_next(const char *cells_name,
+					  int cell_count,
+					  const __be32 *cur, const __be32 *end,
+					  struct of_phandle_args *out_args);
 
 extern void of_alias_scan(void * (*dt_alloc)(u64 size, u64 align));
 extern int of_alias_get_id(struct device_node *np, const char *stem);
@@ -304,7 +314,7 @@ int of_device_is_stdout_path(struct device_node *dn);
 
 #else /* CONFIG_OF */
 
-static inline const char* of_node_full_name(struct device_node *np)
+static inline const char* of_node_full_name(const struct device_node *np)
 {
 	return "<no-node>";
 }
@@ -491,6 +501,22 @@ static inline int of_count_phandle_with_args(struct device_node *np,
 	return -ENOSYS;
 }
 
+static inline const __be32 *of_phandle_iter_init(const struct device_node *np,
+						 const char *list_name,
+						 const __be32 **end)
+{
+	return NULL;
+}
+
+static inline const __be32 *of_phandle_iter_next(const char *cells_name,
+						 int cell_count,
+						 const __be32 *cur,
+						 const __be32 *end,
+						 struct of_phandle_args *out_args)
+{
+	return NULL;
+}
+
 static inline int of_alias_get_id(struct device_node *np, const char *stem)
 {
 	return -ENOSYS;
@@ -520,6 +546,7 @@ static inline const char *of_prop_next_string(struct property *prop,
 
 #define of_match_ptr(_ptr)	NULL
 #define of_match_node(_matches, _node)	NULL
+#define of_match_machine(_matches)	NULL
 #endif /* CONFIG_OF */
 
 #if defined(CONFIG_OF) && defined(CONFIG_NUMA)
@@ -633,6 +660,14 @@ static inline int of_get_available_child_count(const struct device_node *np)
 	return num;
 }
 
+#define of_property_for_each_phandle_with_args(node, list_name, cells_name, \
+					       cell_count, out_args, cur, end) \
+	for (cur = of_phandle_iter_init(node, list_name, &end),		\
+		     cur = of_phandle_iter_next(cells_name, cell_count, \
+						cur, end, &out_args);	\
+	     cur;							\
+	     cur = of_phandle_iter_next(cells_name, cell_count, cur, end, &out_args))
+
 #if defined(CONFIG_PROC_FS) && defined(CONFIG_PROC_DEVICETREE)
 extern void proc_device_tree_add_node(struct device_node *, struct proc_dir_entry *);
 extern void proc_device_tree_add_prop(struct proc_dir_entry *pde, struct property *prop);
@@ -642,5 +677,27 @@ extern void proc_device_tree_update_prop(struct proc_dir_entry *pde,
 					 struct property *newprop,
 					 struct property *oldprop);
 #endif
+
+#ifdef CONFIG_OF
+#define _OF_DECLARE(table, name, compat, fn, fn_type)			\
+	static const struct of_device_id __of_table_##name		\
+		__used __section(__##table##_of_table)			\
+		 = { .compatible = compat,				\
+		     .data = (fn == (fn_type)NULL) ? fn : fn  }
+#else
+#define _OF_DECLARE(table, name, compat, fn, fn_type)			\
+	static const struct of_device_id __of_table_##name		\
+		__attribute__((unused))					\
+		 = { .compatible = compat,				\
+		     .data = (fn == (fn_type)NULL) ? fn : fn }
+#endif
+
+typedef int (*of_init_fn_2)(struct device_node *, struct device_node *);
+typedef void (*of_init_fn_1)(struct device_node *);
+
+#define OF_DECLARE_1(table, name, compat, fn) \
+		_OF_DECLARE(table, name, compat, fn, of_init_fn_1)
+#define OF_DECLARE_2(table, name, compat, fn) \
+		_OF_DECLARE(table, name, compat, fn, of_init_fn_2)
 
 #endif /* _LINUX_OF_H */

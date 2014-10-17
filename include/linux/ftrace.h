@@ -92,6 +92,7 @@ typedef void (*ftrace_func_t)(unsigned long ip, unsigned long parent_ip,
  * STUB   - The ftrace_ops is just a place holder.
  * INITIALIZED - The ftrace_ops has already been initialized (first use time
  *            register_ftrace_function() is called, it will initialized the ops)
+ * DELETED - The ops are being deleted, do not let them be registered again.
  */
 enum {
 	FTRACE_OPS_FL_ENABLED			= 1 << 0,
@@ -103,13 +104,26 @@ enum {
 	FTRACE_OPS_FL_RECURSION_SAFE		= 1 << 6,
 	FTRACE_OPS_FL_STUB			= 1 << 7,
 	FTRACE_OPS_FL_INITIALIZED		= 1 << 8,
+	FTRACE_OPS_FL_DELETED			= 1 << 9,
 };
 
+/*
+ * Note, ftrace_ops can be referenced outside of RCU protection.
+ * (Although, for perf, the control ops prevent that). If ftrace_ops is
+ * allocated and not part of kernel core data, the unregistering of it will
+ * perform a scheduling on all CPUs to make sure that there are no more users.
+ * Depending on the load of the system that may take a bit of time.
+ *
+ * Any private data added must also take care not to be freed and if private
+ * data is added to a ftrace_ops that is in core code, the user of the
+ * ftrace_ops must perform a schedule_on_each_cpu() before freeing it.
+ */
 struct ftrace_ops {
 	ftrace_func_t			func;
 	struct ftrace_ops		*next;
 	unsigned long			flags;
 	int __percpu			*disabled;
+	void				*private;
 #ifdef CONFIG_DYNAMIC_FTRACE
 	struct ftrace_hash		*notrace_hash;
 	struct ftrace_hash		*filter_hash;
@@ -409,7 +423,7 @@ ftrace_set_early_filter(struct ftrace_ops *ops, char *buf, int enable);
 
 /* defined in arch */
 extern int ftrace_ip_converted(unsigned long ip);
-extern int ftrace_dyn_arch_init(void *data);
+extern int ftrace_dyn_arch_init(void);
 extern void ftrace_replace_code(int enable);
 extern int ftrace_update_ftrace_func(ftrace_func_t func);
 extern void ftrace_caller(void);
@@ -603,25 +617,27 @@ static inline void __ftrace_enabled_restore(int enabled)
 #endif
 }
 
-#ifndef HAVE_ARCH_CALLER_ADDR
+/* All archs should have this, but we define it for consistency */
+#ifndef ftrace_return_address0
+# define ftrace_return_address0 __builtin_return_address(0)
+#endif
+
+/* Archs may use other ways for ADDR1 and beyond */
+#ifndef ftrace_return_address
 # ifdef CONFIG_FRAME_POINTER
-#  define CALLER_ADDR0 ((unsigned long)__builtin_return_address(0))
-#  define CALLER_ADDR1 ((unsigned long)__builtin_return_address(1))
-#  define CALLER_ADDR2 ((unsigned long)__builtin_return_address(2))
-#  define CALLER_ADDR3 ((unsigned long)__builtin_return_address(3))
-#  define CALLER_ADDR4 ((unsigned long)__builtin_return_address(4))
-#  define CALLER_ADDR5 ((unsigned long)__builtin_return_address(5))
-#  define CALLER_ADDR6 ((unsigned long)__builtin_return_address(6))
+#  define ftrace_return_address(n) __builtin_return_address(n)
 # else
-#  define CALLER_ADDR0 ((unsigned long)__builtin_return_address(0))
-#  define CALLER_ADDR1 0UL
-#  define CALLER_ADDR2 0UL
-#  define CALLER_ADDR3 0UL
-#  define CALLER_ADDR4 0UL
-#  define CALLER_ADDR5 0UL
-#  define CALLER_ADDR6 0UL
+#  define ftrace_return_address(n) 0UL
 # endif
-#endif /* ifndef HAVE_ARCH_CALLER_ADDR */
+#endif
+
+#define CALLER_ADDR0 ((unsigned long)ftrace_return_address0)
+#define CALLER_ADDR1 ((unsigned long)ftrace_return_address(1))
+#define CALLER_ADDR2 ((unsigned long)ftrace_return_address(2))
+#define CALLER_ADDR3 ((unsigned long)ftrace_return_address(3))
+#define CALLER_ADDR4 ((unsigned long)ftrace_return_address(4))
+#define CALLER_ADDR5 ((unsigned long)ftrace_return_address(5))
+#define CALLER_ADDR6 ((unsigned long)ftrace_return_address(6))
 
 #ifdef CONFIG_IRQSOFF_TRACER
   extern void time_hardirqs_on(unsigned long a0, unsigned long a1);

@@ -236,7 +236,7 @@ static void intel_crtc_fb_gamma_get(struct drm_crtc *crtc, u16 *red, u16 *green,
 	*blue = intel_crtc->lut_b[regno] << 8;
 }
 
-static struct drm_fb_helper_funcs intel_fb_helper_funcs = {
+static const struct drm_fb_helper_funcs intel_fb_helper_funcs = {
 	.gamma_set = intel_crtc_fb_gamma_set,
 	.gamma_get = intel_crtc_fb_gamma_get,
 	.fb_probe = intelfb_create,
@@ -273,7 +273,7 @@ int intel_fbdev_init(struct drm_device *dev)
 		return -ENOMEM;
 
 	dev_priv->fbdev = ifbdev;
-	ifbdev->helper.funcs = &intel_fb_helper_funcs;
+	drm_fb_helper_prepare(dev, &ifbdev->helper, &intel_fb_helper_funcs);
 
 	ret = drm_fb_helper_init(dev, &ifbdev->helper,
 				 INTEL_INFO(dev)->num_pipes,
@@ -342,11 +342,7 @@ void intel_fbdev_restore_mode(struct drm_device *dev)
 	if (INTEL_INFO(dev)->num_pipes == 0)
 		return;
 
-	drm_modeset_lock_all(dev);
-
-	ret = drm_fb_helper_restore_fbdev_mode(&dev_priv->fbdev->helper);
+	ret = drm_fb_helper_restore_fbdev_mode_unlocked(&dev_priv->fbdev->helper);
 	if (ret)
 		DRM_DEBUG("failed to restore crtc mode\n");
-
-	drm_modeset_unlock_all(dev);
 }

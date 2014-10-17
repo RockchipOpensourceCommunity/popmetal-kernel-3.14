@@ -19,12 +19,14 @@
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
+#include <linux/compat.h>
 #include <linux/kernel.h>
 #include <linux/sched.h>
 #include <linux/mm.h>
 #include <linux/smp.h>
 #include <linux/ptrace.h>
 #include <linux/user.h>
+#include <linux/seccomp.h>
 #include <linux/security.h>
 #include <linux/init.h>
 #include <linux/signal.h>
@@ -40,6 +42,9 @@
 #include <asm/pgtable.h>
 #include <asm/traps.h>
 #include <asm/system_misc.h>
+
+#define CREATE_TRACE_POINTS
+#include <trace/events/syscalls.h>
 
 /*
  * TODO: does not yet catch signals sent when the child dies.
@@ -517,6 +522,7 @@ static int fpr_set(struct task_struct *target, const struct user_regset *regset,
 		return ret;
 
 	target->thread.fpsimd_state.user_fpsimd = newstate;
+	fpsimd_flush_task_state(target);
 	return ret;
 }
 
@@ -650,11 +656,16 @@ static int compat_gpr_get(struct task_struct *target,
 			reg = task_pt_regs(target)->regs[idx];
 		}
 
-		ret = copy_to_user(ubuf, &reg, sizeof(reg));
-		if (ret)
-			break;
+		if (kbuf) {
+			memcpy(kbuf, &reg, sizeof(reg));
+			kbuf += sizeof(reg);
+		} else {
+			ret = copy_to_user(ubuf, &reg, sizeof(reg));
+			if (ret)
+				break;
 
-		ubuf += sizeof(reg);
+			ubuf += sizeof(reg);
+		}
 	}
 
 	return ret;
@@ -684,11 +695,16 @@ static int compat_gpr_set(struct task_struct *target,
 		unsigned int idx = start + i;
 		compat_ulong_t reg;
 
-		ret = copy_from_user(&reg, ubuf, sizeof(reg));
-		if (ret)
-			return ret;
+		if (kbuf) {
+			memcpy(&reg, kbuf, sizeof(reg));
+			kbuf += sizeof(reg);
+		} else {
+			ret = copy_from_user(&reg, ubuf, sizeof(reg));
+			if (ret)
+				return ret;
 
-		ubuf += sizeof(reg);
+			ubuf += sizeof(reg);
+		}
 
 		switch (idx) {
 		case 15:
@@ -764,6 +780,7 @@ static int compat_vfp_set(struct task_struct *target,
 		uregs->fpcr = fpscr & VFP_FPSCR_CTRL_MASK;
 	}
 
+	fpsimd_flush_task_state(target);
 	return ret;
 }
 
@@ -821,6 +838,7 @@ static int compat_ptrace_write_user(struct task_struct *tsk, compat_ulong_t off,
 				    compat_ulong_t val)
 {
 	int ret;
+	mm_segment_t old_fs = get_fs();
 
 	if (off & 3 || off >= COMPAT_USER_SZ)
 		return -EIO;
@@ -828,10 +846,13 @@ static int compat_ptrace_write_user(struct task_struct *tsk, compat_ulong_t off,
 	if (off >= sizeof(compat_elf_gregset_t))
 		return 0;
 
+	set_fs(KERNEL_DS);
 	ret = copy_regset_from_user(tsk, &user_aarch32_view,
 				    REGSET_COMPAT_GPR, off,
 				    sizeof(compat_ulong_t),
 				    &val);
+	set_fs(old_fs);
+
 	return ret;
 }
 
@@ -1055,38 +1076,68 @@ const struct user_regset_view *task_user_regset_view(struct task_struct *task)
 long arch_ptrace(struct task_struct *child, long request,
 		 unsigned long addr, unsigned long data)
 {
-	return ptrace_request(child, request, addr, data);
-}
+	int ret;
 
-asmlinkage int syscall_trace(int dir, struct pt_regs *regs)
-{
-	unsigned long saved_reg;
-
-	if (!test_thread_flag(TIF_SYSCALL_TRACE))
-		return regs->syscallno;
-
-	if (is_compat_task()) {
-		/* AArch32 uses ip (r12) for scratch */
-		saved_reg = regs->regs[12];
-		regs->regs[12] = dir;
-	} else {
-		/*
-		 * Save X7. X7 is used to denote syscall entry/exit:
-		 *   X7 = 0 -> entry, = 1 -> exit
-		 */
-		saved_reg = regs->regs[7];
-		regs->regs[7] = dir;
+	switch (request) {
+		case PTRACE_SET_SYSCALL:
+			task_pt_regs(child)->syscallno = data;
+			ret = 0;
+			break;
+		default:
+			ret = ptrace_request(child, request, addr, data);
+			break;
 	}
 
-	if (dir)
+	return ret;
+}
+
+enum ptrace_syscall_dir {
+	PTRACE_SYSCALL_ENTER = 0,
+	PTRACE_SYSCALL_EXIT,
+};
+
+static void tracehook_report_syscall(struct pt_regs *regs,
+				     enum ptrace_syscall_dir dir)
+{
+	int regno;
+	unsigned long saved_reg;
+
+	/*
+	 * A scratch register (ip(r12) on AArch32, x7 on AArch64) is
+	 * used to denote syscall entry/exit:
+	 */
+	regno = (is_compat_task() ? 12 : 7);
+	saved_reg = regs->regs[regno];
+	regs->regs[regno] = dir;
+
+	if (dir == PTRACE_SYSCALL_EXIT)
 		tracehook_report_syscall_exit(regs, 0);
 	else if (tracehook_report_syscall_entry(regs))
 		regs->syscallno = ~0UL;
 
-	if (is_compat_task())
-		regs->regs[12] = saved_reg;
-	else
-		regs->regs[7] = saved_reg;
+	regs->regs[regno] = saved_reg;
+}
+
+asmlinkage int syscall_trace_enter(struct pt_regs *regs)
+{
+	if (secure_computing(regs->syscallno) == -1)
+		/* seccomp failures shouldn't expose any additional code. */
+		return -1;
+
+	if (test_thread_flag(TIF_SYSCALL_TRACE))
+		tracehook_report_syscall(regs, PTRACE_SYSCALL_ENTER);
+
+	if (test_thread_flag(TIF_SYSCALL_TRACEPOINT))
+		trace_sys_enter(regs, regs->syscallno);
 
 	return regs->syscallno;
+}
+
+asmlinkage void syscall_trace_exit(struct pt_regs *regs)
+{
+	if (test_thread_flag(TIF_SYSCALL_TRACEPOINT))
+		trace_sys_exit(regs, regs_return_value(regs));
+
+	if (test_thread_flag(TIF_SYSCALL_TRACE))
+		tracehook_report_syscall(regs, PTRACE_SYSCALL_EXIT);
 }

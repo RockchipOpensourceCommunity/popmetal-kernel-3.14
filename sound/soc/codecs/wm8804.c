@@ -106,7 +106,7 @@ static int txsrc_get(struct snd_kcontrol *kcontrol,
 	struct snd_soc_codec *codec;
 	unsigned int src;
 
-	codec = snd_kcontrol_chip(kcontrol);
+	codec = snd_soc_kcontrol_codec(kcontrol);
 	src = snd_soc_read(codec, WM8804_SPDTX4);
 	if (src & 0x40)
 		ucontrol->value.integer.value[0] = 1;
@@ -122,7 +122,7 @@ static int txsrc_put(struct snd_kcontrol *kcontrol,
 	struct snd_soc_codec *codec;
 	unsigned int src, txpwr;
 
-	codec = snd_kcontrol_chip(kcontrol);
+	codec = snd_soc_kcontrol_codec(kcontrol);
 
 	if (ucontrol->value.integer.value[0] != 0
 			&& ucontrol->value.integer.value[0] != 1)
@@ -545,14 +545,6 @@ static int wm8804_probe(struct snd_soc_codec *codec)
 	int i, id1, id2, ret;
 
 	wm8804 = snd_soc_codec_get_drvdata(codec);
-
-	codec->control_data = wm8804->regmap;
-
-	ret = snd_soc_codec_set_cache_io(codec, 8, 8, SND_SOC_REGMAP);
-	if (ret < 0) {
-		dev_err(codec->dev, "Failed to set cache i/o: %d\n", ret);
-		return ret;
-	}
 
 	for (i = 0; i < ARRAY_SIZE(wm8804->supplies); i++)
 		wm8804->supplies[i].supply = wm8804_supply_names[i];
