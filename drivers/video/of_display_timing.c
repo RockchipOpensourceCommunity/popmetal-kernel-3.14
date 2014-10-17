@@ -61,6 +61,10 @@ static int of_parse_display_timing(const struct device_node *np,
 {
 	u32 val = 0;
 	int ret = 0;
+#if defined(CONFIG_FB_ROCKCHIP) || defined(CONFIG_DRM_ROCKCHIP)
+	struct property *prop;
+	int length;
+#endif
 
 	memset(dt, 0, sizeof(*dt));
 
@@ -94,6 +98,30 @@ static int of_parse_display_timing(const struct device_node *np,
 		dt->flags |= DISPLAY_FLAGS_DOUBLESCAN;
 	if (of_property_read_bool(np, "doubleclk"))
 		dt->flags |= DISPLAY_FLAGS_DOUBLECLK;
+
+#if defined(CONFIG_FB_ROCKCHIP) || defined(CONFIG_DRM_ROCKCHIP)
+	if (!of_property_read_u32(np, "swap-rg", &val))
+		dt->flags |= val ? DISPLAY_FLAGS_SWAP_RG : 0;
+	if (!of_property_read_u32(np, "swap-gb", &val))
+		dt->flags |= val ? DISPLAY_FLAGS_SWAP_GB : 0;
+	if (!of_property_read_u32(np, "swap-rb", &val))
+		dt->flags |= val ? DISPLAY_FLAGS_SWAP_RB : 0;
+	if (!of_property_read_u32(np, "screen-type", &val))
+		dt->screen_type = val;
+	if (!of_property_read_u32(np, "lvds-format", &val))
+		dt->lvds_format = val;
+	if (!of_property_read_u32(np, "out-face", &val))
+		dt->face = val;
+	if (!of_property_read_u32(np, "color-mode", &val))
+                dt->color_mode = val;
+	prop = of_find_property(np, "dsp-lut", &length);
+	if (prop) {
+		dt->dsp_lut = kzalloc(length, GFP_KERNEL);
+		if (dt->dsp_lut)
+	       		ret = of_property_read_u32_array(np,
+	       			"dsp-lut",dt->dsp_lut, length >> 2);
+	}
+#endif
 
 	if (ret) {
 		pr_err("%s: error reading timing properties\n",

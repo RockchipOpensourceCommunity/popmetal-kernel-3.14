@@ -28,6 +28,11 @@ enum display_flags {
 	DISPLAY_FLAGS_INTERLACED	= BIT(8),
 	DISPLAY_FLAGS_DOUBLESCAN	= BIT(9),
 	DISPLAY_FLAGS_DOUBLECLK		= BIT(10),
+#if defined(CONFIG_FB_ROCKCHIP) || defined(CONFIG_DRM_ROCKCHIP)
+	DISPLAY_FLAGS_SWAP_GB		= BIT(10),
+	DISPLAY_FLAGS_SWAP_RG		= BIT(11),
+	DISPLAY_FLAGS_SWAP_RB		= BIT(12),
+#endif
 };
 
 /*
@@ -71,6 +76,13 @@ struct display_timing {
 	struct timing_entry vsync_len;		/* ver. sync len */
 
 	enum display_flags flags;		/* display flags */
+#if defined(CONFIG_FB_ROCKCHIP) || defined(CONFIG_DRM_ROCKCHIP)
+	u16 screen_type;			/*screen type*/
+	u16 lvds_format;			/*lvds data format for lvds screen*/
+	u16 face;				/*display output  interface format:24bit 18bit 16bit*/
+	u16 color_mode;				/* input color mode: RGB or YUV */
+	u32 *dsp_lut;
+#endif
 };
 
 /*
