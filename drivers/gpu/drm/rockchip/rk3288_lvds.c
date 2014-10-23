@@ -66,7 +66,9 @@ struct rk3288_lvds {
 	struct drm_panel *panel;
 	struct drm_connector connector;
 	struct drm_encoder encoder;
-	int dpms;
+	
+	struct mutex suspend_lock;
+	int suspend;
 };
 
 static inline void lvds_writel(struct rk3288_lvds *lvds, u32 offset, u32 val)
@@ -125,7 +127,7 @@ static void rk3288_lvds_poweron(struct drm_encoder *encoder)
 
 	if (lvds->panel)
 		lvds->panel->funcs->enable(lvds->panel);
-
+printk("---->yzq %s %d\n",__func__,__LINE__);
 	/* enable clk */
 	ret = clk_enable(lvds->pclk);
 	if (ret < 0) {
@@ -137,6 +139,7 @@ static void rk3288_lvds_poweron(struct drm_encoder *encoder)
 	writel(0x00, lvds->regs + LVDS_CFG_REG_C);
 	/* enable tx*/
 	writel(0x92, lvds->regs + LVDS_CFG_REG_21);
+	lvds->suspend = false;
 }
 
 static void rk3288_lvds_poweroff(struct drm_encoder *encoder)
@@ -157,11 +160,13 @@ static void rk3288_lvds_poweroff(struct drm_encoder *encoder)
 		lvds->panel->funcs->disable(lvds->panel);
 	
 	clk_disable(lvds->pclk);
+	lvds->suspend = true;
 }
 
 static enum drm_connector_status
 rockchip_connector_detect(struct drm_connector *connector, bool force)
 {
+	printk("---->yzq %s %d\n",__func__,__LINE__);
 	return connector_status_connected;
 }
 
@@ -210,24 +215,26 @@ static struct drm_connector_helper_funcs rockchip_connector_helper_funcs = {
 static void rockchip_drm_encoder_dpms(struct drm_encoder *encoder, int mode)
 {
 	struct rk3288_lvds *lvds = encoder_to_lvds(encoder);
-
-	if (lvds->dpms == mode)
-		return;
+	printk("---->yzq %s %d lvds->dpms=%d\n",__func__,__LINE__, mode);
+	mutex_lock(&lvds->suspend_lock);
 
 	switch (mode) {
 	case DRM_MODE_DPMS_ON:
-		rk3288_lvds_poweron(encoder);
+		if (lvds->suspend)
+			rk3288_lvds_poweron(encoder);
 		break;
 	case DRM_MODE_DPMS_STANDBY:
 	case DRM_MODE_DPMS_SUSPEND:
 	case DRM_MODE_DPMS_OFF:
-		rk3288_lvds_poweroff(encoder);
+		if (!lvds->suspend)
+			rk3288_lvds_poweroff(encoder);
 		break;
 	default:
 		break;
 	}
 
-	lvds->dpms = mode;
+	printk("---->yzq %s %d\n",__func__,__LINE__);
+	mutex_unlock(&lvds->suspend_lock);
 }
 
 static bool
@@ -249,6 +256,7 @@ static void rockchip_drm_encoder_mode_set(struct drm_encoder *encoder,
 	u32 val;
 	int ret;
 
+	printk("---->yzq %s %d\n",__func__,__LINE__);
 	val = lvds->format;
 	if (lvds->output == DISPLAY_OUTPUT_DUAL_LVDS)
 		val |= LVDS_DUAL | LVDS_CH0_EN | LVDS_CH1_EN;
@@ -309,6 +317,7 @@ static void rockchip_drm_encoder_prepare(struct drm_encoder *encoder)
 	u32 val;
 	int ret;
 
+	printk("---->yzq %s %d\n",__func__,__LINE__);
 	ret = rockchip_drm_crtc_enable_out_mode(encoder->crtc,
 						lvds->connector.connector_type,
 						ROCKCHIP_OUT_MODE_P888);
@@ -362,6 +371,7 @@ static struct drm_encoder_helper_funcs rockchip_encoder_helper_funcs = {
 
 static void rockchip_drm_encoder_destroy(struct drm_encoder *encoder)
 {
+	printk("---->yzq %s %d\n",__func__,__LINE__);
 	drm_encoder_cleanup(encoder);
 }
 
@@ -448,6 +458,9 @@ static int rk3288_lvds_bind(struct device *dev, struct device *master,
 		DRM_ERROR("failed to attach connector and encoder\n");
 		goto err_free_connector_sysfs;
 	}
+	
+	mutex_init(&lvds->suspend_lock);
+	lvds->suspend = true;
 
 	return 0;
 
@@ -540,6 +553,12 @@ static int rk3288_lvds_probe(struct platform_device *pdev)
 				"rockchip-lvds unsupport data-width[%d]\n", i);
 			return -EINVAL;
 		}
+	}
+
+	lvds->grf = syscon_regmap_lookup_by_phandle(dev->of_node, "rockchip,grf");
+	if (IS_ERR(lvds->grf)) {
+		dev_err(dev, "needs rockchip,grf property\n");
+		return PTR_ERR(lvds->grf);
 	}
 
 	lvds->dev = dev;

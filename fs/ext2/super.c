@@ -895,7 +895,7 @@ static int ext2_fill_super(struct super_block *sb, void *data, int silent)
 		ext2_msg(sb, KERN_ERR, "error: couldn't mount RDWR because of "
 		       "unsupported optional features (%x)",
 		       le32_to_cpu(features));
-		goto failed_mount;
+	//	goto failed_mount;
 	}
 
 	blocksize = BLOCK_SIZE << le32_to_cpu(sbi->s_es->s_log_block_size);
@@ -1324,8 +1324,8 @@ static int ext2_remount (struct super_block * sb, int * flags, char * data)
 				"warning: couldn't remount RDWR because of "
 				"unsupported optional features (%x).",
 				le32_to_cpu(ret));
-			err = -EROFS;
-			goto restore_opts;
+//			err = -EROFS;
+//			goto restore_opts;
 		}
 		/*
 		 * Mounting a RDONLY partition read-write, so reread and

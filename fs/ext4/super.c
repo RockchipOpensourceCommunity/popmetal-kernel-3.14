@@ -2745,7 +2745,7 @@ static int ext4_feature_set_ok(struct super_block *sb, int readonly)
 			 "unsupported optional features (%x)",
 			 (le32_to_cpu(EXT4_SB(sb)->s_es->s_feature_ro_compat) &
 				~EXT4_FEATURE_RO_COMPAT_SUPP));
-		return 0;
+//		return 0;
 	}
 	/*
 	 * Large file size enabled file system can only be mounted
@@ -2756,7 +2756,7 @@ static int ext4_feature_set_ok(struct super_block *sb, int readonly)
 			ext4_msg(sb, KERN_ERR, "Filesystem with huge files "
 				 "cannot be mounted RDWR without "
 				 "CONFIG_LBDAF");
-			return 0;
+//			return 0;
 		}
 	}
 	if (EXT4_HAS_RO_COMPAT_FEATURE(sb, EXT4_FEATURE_RO_COMPAT_BIGALLOC) &&

@@ -70,12 +70,15 @@ static int panel_simple_get_fixed_modes(struct panel_simple *panel)
 	struct drm_display_mode *mode;
 	unsigned int i, num = 0;
 
+printk("------->yzq %s %d \n",__func__,__LINE__);
 	if (!panel->desc)
 		return 0;
 
+printk("------->yzq %s %d \n",__func__,__LINE__);
 	for (i = 0; i < panel->desc->num_modes; i++) {
 		const struct drm_display_mode *m = &panel->desc->modes[i];
 
+printk("------->yzq %s %d \n",__func__,__LINE__);
 		mode = drm_mode_duplicate(drm, m);
 		if (!mode) {
 			dev_err(drm->dev, "failed to add mode %ux%u@%u\n",
@@ -83,12 +86,14 @@ static int panel_simple_get_fixed_modes(struct panel_simple *panel)
 			continue;
 		}
 
+printk("------->yzq %s %d [%dx%d] \n",__func__,__LINE__,mode->hdisplay,mode->vdisplay);
 		drm_mode_set_name(mode);
 
 		drm_mode_probed_add(connector, mode);
 		num++;
 	}
 
+printk("------->yzq %s %d \n",__func__,__LINE__);
 	connector->display_info.bpc = panel->desc->bpc;
 	connector->display_info.width_mm = panel->desc->size.width;
 	connector->display_info.height_mm = panel->desc->size.height;
@@ -148,7 +153,7 @@ static int panel_simple_get_modes(struct drm_panel *panel)
 {
 	struct panel_simple *p = to_panel_simple(panel);
 	int num = 0;
-
+printk("------->yzq %s %d \n",__func__,__LINE__);
 	/* probe EDID if a DDC bus is available */
 	if (p->ddc) {
 		struct edid *edid = drm_get_edid(panel->connector, p->ddc);
@@ -159,6 +164,7 @@ static int panel_simple_get_modes(struct drm_panel *panel)
 		}
 	}
 
+printk("------->yzq %s %d \n",__func__,__LINE__);
 	/* add hard-coded panel modes */
 	num += panel_simple_get_fixed_modes(p);
 
@@ -364,6 +370,29 @@ static const struct panel_desc chunghwa_claa101wb01 = {
 	},
 };
 
+static const struct drm_display_mode rockchip_vga_mode = {
+	.clock = 74250,
+	.hdisplay = 1280,
+	.hsync_start = 1280 + 220,
+	.hsync_end = 1280 + 220 + 40,
+	.htotal = 1280 + 220 + 40 + 110,
+	.vdisplay = 720,
+	.vsync_start = 720 + 20,
+	.vsync_end = 720 + 20 + 5,
+	.vtotal = 720 + 20 + 5 + 5,
+	.vrefresh = 60,
+};
+
+static const struct panel_desc rockchip_vga = {
+	.modes = &rockchip_vga_mode,
+	.num_modes = 1,
+	.bpc = 6,
+	.size = {
+		.width = 1024,
+		.height = 768,
+	},
+};
+
 static const struct drm_display_mode cmn_n116bgeea2_mode = {
 	.clock = 76420,
 	.hdisplay = 1366,
@@ -495,6 +524,9 @@ static const struct of_device_id platform_of_match[] = {
 	}, {
 		.compatible = "cnm,n116bgeea2",
 		.data = &cmn_n116bgeea2
+	}, {
+		.compatible = "rockchip,vga",
+		.data = &rockchip_vga
 	}, {
 		.compatible = "edt,et057090dhu",
 		.data = &edt_et057090dhu,

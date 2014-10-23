@@ -22,7 +22,7 @@
 		reg = <0x0 0x80000000>;
 	};
 
-	backlight {
+	backlight: backlight {
 		compatible = "pwm-backlight";
 		brightness-levels = <
 			  0   1   2   3   4   5   6   7
@@ -62,6 +62,14 @@
 		pinctrl-names = "default";
 		pinctrl-0 = <&bl_en>;
 		pwms = <&pwm0 0 1000000 0>;
+	};
+
+	panel: panel {
+		compatible ="rockchip,vga","simple-panel";
+		status = "okay";
+		enable-gpios = <&gpio7 21 GPIO_ACTIVE_HIGH>;
+		ddc-i2c-bus = <&i2c2>;
+		backlight = <&backlight>;
 	};
 
 	gpio-keys {
@@ -464,8 +472,25 @@
 	status = "okay";
 };
 
-&edp {
-	status = "disabled";
+&lvds {
+	status = "okay";
+	rockchip,panel = <&panel>;
+};
+
+&vopl {
+	status = "okay";
+};
+
+&vopl_mmu {
+	status = "okay";
+};
+
+&vopb {
+	status = "okay";
+};
+
+&vopb_mmu {
+	status = "okay";
 };
 
 &gpu {
@@ -611,32 +636,4 @@
 &usb_otg {
 	dr_mode = "host";
 	status = "okay";
-};
-&fb0 {
-	rockchip,disp-mode = <DUAL>;
-	rockchip,uboot-logo-on = <0>;
-};
-
-&rk_screen0 {
-	status = "okay";
-};
-
-/*lcdc0 as PRMRY(LCD),lcdc1 as EXTEND(HDMI)*/
-&lcdc0 {
-	status = "okay";
-	rockchip,mirror = <NO_MIRROR>;
-	rockchip,iommu-enabled = <0>;
-};
-
-
-&lcdc1 {
-	status = "okay";
-	rockchip,mirror = <NO_MIRROR>;
-	rockchip,cabc_mode = <0>;
-	rockchip,iommu-enabled = <0>;
-};
-
-&hdmi {
-	status = "okay";
-	rockchips,hdmi_audio_source = <0>;
 };
