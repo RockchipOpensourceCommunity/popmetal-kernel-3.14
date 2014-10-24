@@ -134,7 +134,7 @@ printk("---->yzq %s %d\n",__func__,__LINE__);
 		dev_err(lvds->dev, "failed to enable lvds pclk %d\n", ret);
 		return;
 	}
-	
+
 	/* enable pll */
 	writel(0x00, lvds->regs + LVDS_CFG_REG_C);
 	/* enable tx*/
@@ -226,8 +226,8 @@ static void rockchip_drm_encoder_dpms(struct drm_encoder *encoder, int mode)
 	case DRM_MODE_DPMS_STANDBY:
 	case DRM_MODE_DPMS_SUSPEND:
 	case DRM_MODE_DPMS_OFF:
-		if (!lvds->suspend)
-			rk3288_lvds_poweroff(encoder);
+	//	if (!lvds->suspend)
+	//		rk3288_lvds_poweroff(encoder);
 		break;
 	default:
 		break;
@@ -560,6 +560,7 @@ static int rk3288_lvds_probe(struct platform_device *pdev)
 		dev_err(dev, "needs rockchip,grf property\n");
 		return PTR_ERR(lvds->grf);
 	}
+	regmap_write(lvds->grf, 0x380, 0x00100010);
 
 	lvds->dev = dev;
 	lvds->panel = panel;
