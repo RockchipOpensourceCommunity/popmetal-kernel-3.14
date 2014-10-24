@@ -199,6 +199,7 @@
 	wifi_regulator: wifi-regulator {
 		compatible = "regulator-fixed";
 		enable-active-high;
+		gpio = <&gpio4 28 GPIO_ACTIVE_HIGH>;
 		pinctrl-names = "default";
 		pinctrl-0 = <&wifi_enable_h>;
 		regulator-name = "wifi_regulator";
@@ -236,7 +237,20 @@
 };
 
 &sdio0 {
-	status = "disabled";
+	broken-cd;
+	bus-width = <4>;
+	cap-sd-highspeed;
+	card-external-vcc-supply = <&wifi_regulator>;
+	clocks = <&cru HCLK_SDIO0>, <&cru SCLK_SDIO0>, <&rk808 RK808_CLKOUT1>;
+	clock-names = "biu", "ciu", "card_ext_clock";
+	keep-power-in-suspend;
+	non-removable;
+	num-slots = <1>;
+	pinctrl-names = "default";
+	pinctrl-0 = <&sdio0_clk &sdio0_cmd &sdio0_bus4>;
+	status = "okay";
+	vmmc-supply = <&vcc_io>;
+	vqmmc-supply = <&vccio_wl>;
 };
 
 &sdmmc {
