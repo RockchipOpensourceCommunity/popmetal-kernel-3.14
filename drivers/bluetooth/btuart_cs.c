@@ -62,7 +62,7 @@ MODULE_LICENSE("GPL");
 /* ======================== Local structures ======================== */
 
 
-struct btuart_info {
+typedef struct btuart_info_t {
 	struct pcmcia_device *p_dev;
 
 	struct hci_dev *hdev;
@@ -75,7 +75,7 @@ struct btuart_info {
 	unsigned long rx_state;
 	unsigned long rx_count;
 	struct sk_buff *rx_skb;
-};
+} btuart_info_t;
 
 
 static int btuart_config(struct pcmcia_device *link);
@@ -127,7 +127,7 @@ static int btuart_write(unsigned int iobase, int fifo_size, __u8 *buf, int len)
 }
 
 
-static void btuart_write_wakeup(struct btuart_info *info)
+static void btuart_write_wakeup(btuart_info_t *info)
 {
 	if (!info) {
 		BT_ERR("Unknown device");
@@ -172,7 +172,7 @@ static void btuart_write_wakeup(struct btuart_info *info)
 }
 
 
-static void btuart_receive(struct btuart_info *info)
+static void btuart_receive(btuart_info_t *info)
 {
 	unsigned int iobase;
 	int boguscount = 0;
@@ -286,7 +286,7 @@ static void btuart_receive(struct btuart_info *info)
 
 static irqreturn_t btuart_interrupt(int irq, void *dev_inst)
 {
-	struct btuart_info *info = dev_inst;
+	btuart_info_t *info = dev_inst;
 	unsigned int iobase;
 	int boguscount = 0;
 	int iir, lsr;
@@ -340,8 +340,7 @@ static irqreturn_t btuart_interrupt(int irq, void *dev_inst)
 }
 
 
-static void btuart_change_speed(struct btuart_info *info,
-				unsigned int speed)
+static void btuart_change_speed(btuart_info_t *info, unsigned int speed)
 {
 	unsigned long flags;
 	unsigned int iobase;
@@ -398,7 +397,7 @@ static void btuart_change_speed(struct btuart_info *info,
 
 static int btuart_hci_flush(struct hci_dev *hdev)
 {
-	struct btuart_info *info = hci_get_drvdata(hdev);
+	btuart_info_t *info = hci_get_drvdata(hdev);
 
 	/* Drop TX queue */
 	skb_queue_purge(&(info->txq));
@@ -428,7 +427,7 @@ static int btuart_hci_close(struct hci_dev *hdev)
 
 static int btuart_hci_send_frame(struct hci_dev *hdev, struct sk_buff *skb)
 {
-	struct btuart_info *info = hci_get_drvdata(hdev);
+	btuart_info_t *info = hci_get_drvdata(hdev);
 
 	switch (bt_cb(skb)->pkt_type) {
 	case HCI_COMMAND_PKT:
@@ -456,7 +455,7 @@ static int btuart_hci_send_frame(struct hci_dev *hdev, struct sk_buff *skb)
 /* ======================== Card services HCI interaction ======================== */
 
 
-static int btuart_open(struct btuart_info *info)
+static int btuart_open(btuart_info_t *info)
 {
 	unsigned long flags;
 	unsigned int iobase = info->p_dev->resource[0]->start;
@@ -522,7 +521,7 @@ static int btuart_open(struct btuart_info *info)
 }
 
 
-static int btuart_close(struct btuart_info *info)
+static int btuart_close(btuart_info_t *info)
 {
 	unsigned long flags;
 	unsigned int iobase = info->p_dev->resource[0]->start;
@@ -551,7 +550,7 @@ static int btuart_close(struct btuart_info *info)
 
 static int btuart_probe(struct pcmcia_device *link)
 {
-	struct btuart_info *info;
+	btuart_info_t *info;
 
 	/* Create new info device */
 	info = devm_kzalloc(&link->dev, sizeof(*info), GFP_KERNEL);
@@ -614,7 +613,7 @@ static int btuart_check_config_notpicky(struct pcmcia_device *p_dev,
 
 static int btuart_config(struct pcmcia_device *link)
 {
-	struct btuart_info *info = link->priv;
+	btuart_info_t *info = link->priv;
 	int i;
 	int try;
 
@@ -655,7 +654,7 @@ failed:
 
 static void btuart_release(struct pcmcia_device *link)
 {
-	struct btuart_info *info = link->priv;
+	btuart_info_t *info = link->priv;
 
 	btuart_close(info);
 

@@ -227,8 +227,7 @@ static int rfcomm_check_security(struct rfcomm_dlc *d)
 		break;
 	}
 
-	return hci_conn_security(conn->hcon, d->sec_level, auth_type,
-				 d->out);
+	return hci_conn_security(conn->hcon, d->sec_level, auth_type);
 }
 
 static void rfcomm_session_timeout(unsigned long arg)
@@ -308,7 +307,7 @@ struct rfcomm_dlc *rfcomm_dlc_alloc(gfp_t prio)
 	setup_timer(&d->timer, rfcomm_dlc_timeout, (unsigned long)d);
 
 	skb_queue_head_init(&d->tx_queue);
-	mutex_init(&d->lock);
+	spin_lock_init(&d->lock);
 	atomic_set(&d->refcnt, 1);
 
 	rfcomm_dlc_clear_state(d);
@@ -1910,13 +1909,10 @@ static struct rfcomm_session *rfcomm_process_rx(struct rfcomm_session *s)
 	/* Get data directly from socket receive queue without copying it. */
 	while ((skb = skb_dequeue(&sk->sk_receive_queue))) {
 		skb_orphan(skb);
-		if (!skb_linearize(skb)) {
+		if (!skb_linearize(skb))
 			s = rfcomm_recv_frame(s, skb);
-			if (!s)
-				break;
-		} else {
+		else
 			kfree_skb(skb);
-		}
 	}
 
 	if (s && (sk->sk_state == BT_CLOSED))

@@ -70,7 +70,7 @@ struct rfcomm_dev {
 };
 
 static LIST_HEAD(rfcomm_dev_list);
-static DEFINE_MUTEX(rfcomm_dev_lock);
+static DEFINE_SPINLOCK(rfcomm_dev_lock);
 
 static void rfcomm_dev_data_ready(struct rfcomm_dlc *dlc, struct sk_buff *skb);
 static void rfcomm_dev_state_change(struct rfcomm_dlc *dlc, int err);
@@ -96,9 +96,9 @@ static void rfcomm_dev_destruct(struct tty_port *port)
 	if (dev->tty_dev)
 		tty_unregister_device(rfcomm_tty_driver, dev->id);
 
-	mutex_lock(&rfcomm_dev_lock);
+	spin_lock(&rfcomm_dev_lock);
 	list_del(&dev->list);
-	mutex_unlock(&rfcomm_dev_lock);
+	spin_unlock(&rfcomm_dev_lock);
 
 	kfree(dev);
 
@@ -161,14 +161,14 @@ static struct rfcomm_dev *rfcomm_dev_get(int id)
 {
 	struct rfcomm_dev *dev;
 
-	mutex_lock(&rfcomm_dev_lock);
+	spin_lock(&rfcomm_dev_lock);
 
 	dev = __rfcomm_dev_lookup(id);
 
 	if (dev && !tty_port_get(&dev->port))
 		dev = NULL;
 
-	mutex_unlock(&rfcomm_dev_lock);
+	spin_unlock(&rfcomm_dev_lock);
 
 	return dev;
 }
@@ -224,7 +224,7 @@ static struct rfcomm_dev *__rfcomm_dev_add(struct rfcomm_dev_req *req,
 	if (!dev)
 		return ERR_PTR(-ENOMEM);
 
-	mutex_lock(&rfcomm_dev_lock);
+	spin_lock(&rfcomm_dev_lock);
 
 	if (req->dev_id < 0) {
 		dev->id = 0;
@@ -305,11 +305,11 @@ static struct rfcomm_dev *__rfcomm_dev_add(struct rfcomm_dev_req *req,
 	   holds reference to this module. */
 	__module_get(THIS_MODULE);
 
-	mutex_unlock(&rfcomm_dev_lock);
+	spin_unlock(&rfcomm_dev_lock);
 	return dev;
 
 out:
-	mutex_unlock(&rfcomm_dev_lock);
+	spin_unlock(&rfcomm_dev_lock);
 	kfree(dev);
 	return ERR_PTR(err);
 }
@@ -524,7 +524,7 @@ static int rfcomm_get_dev_list(void __user *arg)
 
 	di = dl->dev_info;
 
-	mutex_lock(&rfcomm_dev_lock);
+	spin_lock(&rfcomm_dev_lock);
 
 	list_for_each_entry(dev, &rfcomm_dev_list, list) {
 		if (!tty_port_get(&dev->port))
@@ -540,7 +540,7 @@ static int rfcomm_get_dev_list(void __user *arg)
 			break;
 	}
 
-	mutex_unlock(&rfcomm_dev_lock);
+	spin_unlock(&rfcomm_dev_lock);
 
 	dl->dev_num = n;
 	size = sizeof(*dl) + n * sizeof(*di);

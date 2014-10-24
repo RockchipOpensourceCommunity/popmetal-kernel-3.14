@@ -58,7 +58,6 @@ int bt_to_errno(__u16 code)
 		return EIO;
 
 	case 0x04:
-	case 0x3c:
 		return EHOSTDOWN;
 
 	case 0x05:
@@ -135,34 +134,40 @@ int bt_to_errno(__u16 code)
 }
 EXPORT_SYMBOL(bt_to_errno);
 
-void bt_info(const char *format, ...)
+int bt_info(const char *format, ...)
 {
 	struct va_format vaf;
 	va_list args;
+	int r;
 
 	va_start(args, format);
 
 	vaf.fmt = format;
 	vaf.va = &args;
 
-	pr_info("%pV", &vaf);
+	r = pr_info("%pV", &vaf);
 
 	va_end(args);
+
+	return r;
 }
 EXPORT_SYMBOL(bt_info);
 
-void bt_err(const char *format, ...)
+int bt_err(const char *format, ...)
 {
 	struct va_format vaf;
 	va_list args;
+	int r;
 
 	va_start(args, format);
 
 	vaf.fmt = format;
 	vaf.va = &args;
 
-	pr_err("%pV", &vaf);
+	r = pr_err("%pV", &vaf);
 
 	va_end(args);
+
+	return r;
 }
 EXPORT_SYMBOL(bt_err);

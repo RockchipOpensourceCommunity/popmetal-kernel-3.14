@@ -40,7 +40,7 @@
 #include <net/bluetooth/bluetooth.h>
 #include <net/bluetooth/hci_core.h>
 
-#define VERSION "1.5"
+#define VERSION "1.4"
 
 static bool amp;
 
@@ -95,21 +95,10 @@ static int vhci_send_frame(struct hci_dev *hdev, struct sk_buff *skb)
 	return 0;
 }
 
-static int vhci_create_device(struct vhci_data *data, __u8 opcode)
+static int vhci_create_device(struct vhci_data *data, __u8 dev_type)
 {
 	struct hci_dev *hdev;
 	struct sk_buff *skb;
-	__u8 dev_type;
-
-	/* bits 0-1 are dev_type (BR/EDR or AMP) */
-	dev_type = opcode & 0x03;
-
-	if (dev_type != HCI_BREDR && dev_type != HCI_AMP)
-		return -EINVAL;
-
-	/* bits 2-5 are reserved (must be zero) */
-	if (opcode & 0x3c)
-		return -EINVAL;
 
 	skb = bt_skb_alloc(4, GFP_KERNEL);
 	if (!skb)
@@ -132,14 +121,6 @@ static int vhci_create_device(struct vhci_data *data, __u8 opcode)
 	hdev->flush = vhci_flush;
 	hdev->send  = vhci_send_frame;
 
-	/* bit 6 is for external configuration */
-	if (opcode & 0x40)
-		set_bit(HCI_QUIRK_EXTERNAL_CONFIG, &hdev->quirks);
-
-	/* bit 7 is for raw device */
-	if (opcode & 0x80)
-		set_bit(HCI_QUIRK_RAW_DEVICE, &hdev->quirks);
-
 	if (hci_register_dev(hdev) < 0) {
 		BT_ERR("Can't register HCI device");
 		hci_free_dev(hdev);
@@ -151,7 +132,7 @@ static int vhci_create_device(struct vhci_data *data, __u8 opcode)
 	bt_cb(skb)->pkt_type = HCI_VENDOR_PKT;
 
 	*skb_put(skb, 1) = 0xff;
-	*skb_put(skb, 1) = opcode;
+	*skb_put(skb, 1) = dev_type;
 	put_unaligned_le16(hdev->id, skb_put(skb, 2));
 	skb_queue_tail(&data->readq, skb);
 
@@ -165,7 +146,7 @@ static inline ssize_t vhci_get_user(struct vhci_data *data,
 {
 	size_t len = iov_length(iov, count);
 	struct sk_buff *skb;
-	__u8 pkt_type, opcode;
+	__u8 pkt_type, dev_type;
 	unsigned long i;
 	int ret;
 
@@ -209,7 +190,7 @@ static inline ssize_t vhci_get_user(struct vhci_data *data,
 
 		cancel_delayed_work_sync(&data->open_timeout);
 
-		opcode = *((__u8 *) skb->data);
+		dev_type = *((__u8 *) skb->data);
 		skb_pull(skb, 1);
 
 		if (skb->len > 0) {
@@ -219,7 +200,10 @@ static inline ssize_t vhci_get_user(struct vhci_data *data,
 
 		kfree_skb(skb);
 
-		ret = vhci_create_device(data, opcode);
+		if (dev_type != HCI_BREDR && dev_type != HCI_AMP)
+			return -EINVAL;
+
+		ret = vhci_create_device(data, dev_type);
 		break;
 
 	default:
