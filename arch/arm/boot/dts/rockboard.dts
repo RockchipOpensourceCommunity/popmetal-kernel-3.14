@@ -77,6 +77,7 @@
 		#address-cells = <1>;
 		#size-cells = <0>;
 		autorepeat;
+		status = "disabled";
 
 		pinctrl-names = "default";
 		pinctrl-0 = <&pwr_key_h &ap_lid_int_l>;

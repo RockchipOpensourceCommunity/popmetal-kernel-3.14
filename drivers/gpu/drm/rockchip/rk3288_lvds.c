@@ -318,7 +318,7 @@ static void rockchip_drm_encoder_prepare(struct drm_encoder *encoder)
 	int ret;
 
 	printk("---->yzq %s %d\n",__func__,__LINE__);
-	ret = rockchip_drm_crtc_enable_out_mode(encoder->crtc,
+	ret = rockchip_drm_crtc_mode_config(encoder->crtc,
 						lvds->connector.connector_type,
 						ROCKCHIP_OUT_MODE_P888);
 	if (ret < 0) {
