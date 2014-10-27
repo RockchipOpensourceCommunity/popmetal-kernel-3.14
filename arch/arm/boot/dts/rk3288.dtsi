@@ -605,16 +605,16 @@
                         timing0: timing0 {
 				screen-type = <SCREEN_RGB>;
 				out-face    = <OUT_P888>;
-				clock-frequency = <74250000>;
-				hactive = <1280>;
-				vactive = <720>;
-				hback-porch = <220>;
-				hfront-porch = <110>;
-				vback-porch = <20>;
-				vfront-porch = <5>;
-				hsync-len = <40>;
-				vsync-len = <5>;
-				hsync-active = <1>;
+				clock-frequency = <106500000>;
+				hactive = <1440>;
+				vactive = <900>;
+				hback-porch = <232>;
+				hfront-porch = <80>;
+				vback-porch = <25>;
+				vfront-porch = <3>;
+				hsync-len = <152>;
+				vsync-len = <6>;
+				hsync-active = <0>;
 				vsync-active = <1>;
 				de-active = <0>;
 				pixelclk-active = <1>;
