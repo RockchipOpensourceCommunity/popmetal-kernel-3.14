@@ -69,6 +69,7 @@
 		#address-cells = <1>;
 		#size-cells = <0>;
 		autorepeat;
+		status = "okay";
 
 		pinctrl-names = "default";
 		pinctrl-0 = <&pwr_key_h &ap_lid_int_l>;
@@ -79,15 +80,6 @@
 			debounce-interval = <100>;
 			gpio-key,wakeup;
 		};
-
-		lid {
-			label = "Lid";
-			gpios = <&gpio0 6 GPIO_ACTIVE_LOW>;
-			linux,code = <0>; /* SW_LID */
-			linux,input-type = <5>; /* EV_SW */
-			debounce-interval = <1>;
-			gpio-key,wakeup;
-                };
 	};
 
 	gpio-charger {
@@ -191,10 +183,19 @@
 	wifi_regulator: wifi-regulator {
 		compatible = "regulator-fixed";
 		enable-active-high;
+		gpio = <&gpio4 28 GPIO_ACTIVE_HIGH>;
 		pinctrl-names = "default";
 		pinctrl-0 = <&wifi_enable_h>;
 		regulator-name = "wifi_regulator";
 	};
+
+	io-domains {
+                compatible = "rockchip,rk3288-io-voltage-domain";
+                rockchip,grf = <&grf>;
+
+                lcdc-supply = <&vcc_io>;
+                wifi-supply = <&vcc18>;
+        };
 };
 
 &cpu0 {
@@ -228,7 +229,20 @@
 };
 
 &sdio0 {
-	status = "disabled";
+	broken-cd;
+	bus-width = <4>;
+	cap-sd-highspeed;
+	card-external-vcc-supply = <&wifi_regulator>;
+	clocks = <&cru HCLK_SDIO0>, <&cru SCLK_SDIO0>, <&rk808 RK808_CLKOUT1>;
+	clock-names = "biu", "ciu", "card_ext_clock";
+	keep-power-in-suspend;
+	non-removable;
+	num-slots = <1>;
+	pinctrl-names = "default";
+	pinctrl-0 = <&sdio0_clk &sdio0_cmd &sdio0_bus4>;
+	status = "okay";
+	vmmc-supply = <&vcc_io>;
+	vqmmc-supply = <&vccio_wl>;
 };
 
 &sdmmc {
@@ -301,13 +315,6 @@
 				regulator-ramp-delay = <2000>;
 			};
 
-			/*
-			 * vcc_18 has several aliases.  (vcc18_flashio and
-			 * vcc18_wl).  We'll add those aliases here just to
-			 * make it easier to follow the schematic.  The signals
-			 * are actually hooked together and only separated for
-			 * power measurement purposes).
-			 */
 			vcc_io: DCDC_REG4 {
 				regulator-always-on;
 				regulator-boot-on;
