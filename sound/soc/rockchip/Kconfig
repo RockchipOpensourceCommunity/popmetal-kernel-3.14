@@ -36,3 +36,11 @@ config SND_RK_SOC_RT5631
 	help
 	  Say Y if you want to add support for SoC audio on rockchip
 	  with the RT5631.
+config SND_SOC_ROCKCHIP_HDMI_AUDIO
+	tristate "ASoC support for Rockchip HDMI audio"
+	depends on SND_SOC_ROCKCHIP
+	select SND_SOC_ROCKCHIP_I2S
+	select SND_SOC_DW_HDMI_AUDIO
+	help
+	  Say Y or M here if you want to add support for SoC audio on Rockchip
+	  HDMI, such as rk3288 hdmi.
