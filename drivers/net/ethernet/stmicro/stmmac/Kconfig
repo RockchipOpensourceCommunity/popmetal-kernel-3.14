@@ -26,6 +26,18 @@ config STMMAC_PLATFORM
 
 	  If unsure, say N.
 
+config DWMAC_RK
+	bool "Rockchip GMAC support"
+	depends on STMMAC_PLATFORM && ARCH_ROCKCHIP
+	default y
+	---help---
+	  Support for Rockchip RK3288 GMAC ethernet controllers.
+
+	  This selects Rockchip SoC glue layer support for the
+	  stmmac device driver. This driver is used for RK3288
+	  GMAC ethernet controller.
+
+
 config DWMAC_SUNXI
 	bool "Allwinner GMAC support"
 	depends on STMMAC_PLATFORM && ARCH_SUNXI

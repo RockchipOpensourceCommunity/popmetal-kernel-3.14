@@ -199,6 +199,7 @@
 	wifi_regulator: wifi-regulator {
 		compatible = "regulator-fixed";
 		enable-active-high;
+		gpio = <&gpio4 28 GPIO_ACTIVE_HIGH>;
 		pinctrl-names = "default";
 		pinctrl-0 = <&wifi_enable_h>;
 		regulator-name = "wifi_regulator";
@@ -236,7 +237,20 @@
 };
 
 &sdio0 {
-	status = "disabled";
+	broken-cd;
+	bus-width = <4>;
+	cap-sd-highspeed;
+	card-external-vcc-supply = <&wifi_regulator>;
+	clocks = <&cru HCLK_SDIO0>, <&cru SCLK_SDIO0>, <&rk808 RK808_CLKOUT1>;
+	clock-names = "biu", "ciu", "card_ext_clock";
+	keep-power-in-suspend;
+	non-removable;
+	num-slots = <1>;
+	pinctrl-names = "default";
+	pinctrl-0 = <&sdio0_clk &sdio0_cmd &sdio0_bus4>;
+	status = "okay";
+	vmmc-supply = <&vcc_io>;
+	vqmmc-supply = <&vccio_wl>;
 };
 
 &sdmmc {
@@ -623,6 +637,28 @@
 			rockchip,pins = <0 12 RK_FUNC_GPIO &pcfg_pull_none>;
 		};
 	};
+};
+
+&ext_gmac {
+	clock-frequency = <125000000>;
+	clock-output-names = "ext_gmac";
+};
+
+&gmac {
+	//pmu_regulator = "act_ldo5";
+	//pmu_enable_level = <1>; //1->HIGH, 0->LOW
+	power-gpio = <&gpio0 6 GPIO_ACTIVE_HIGH>;
+	reset-gpio = <&gpio4 7 GPIO_ACTIVE_LOW>;
+	//phyirq-gpio = <&gpio4 2 GPIO_ACTIVE_LOW>;
+	phy-mode = "rgmii";
+	clock_in_out = "input";
+	assigned-clocks = <&cru SCLK_MAC>;
+	assigned-clock-parents = <&ext_gmac>;
+	pinctrl-names = "default";
+	pinctrl-0 = <&rgmii_pin>; /*&rmii_pin*/
+	tx_delay = <0x30>;
+	rx_delay = <0x10>;
+	status = "ok";
 };
 
 &usb_host0_ehci {
