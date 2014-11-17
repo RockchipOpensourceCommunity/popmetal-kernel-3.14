@@ -30,6 +30,9 @@
 #include "stmmac.h"
 
 static const struct of_device_id stmmac_dt_ids[] = {
+#ifdef CONFIG_DWMAC_RK
+	{ .compatible = "rockchip,rk3288-gmac", .data = &rk_gmac_data},
+#endif
 #ifdef CONFIG_DWMAC_SUNXI
 	{ .compatible = "allwinner,sun7i-a20-gmac", .data = &sun7i_gmac_data},
 #endif
@@ -200,6 +203,8 @@ static int stmmac_pltfr_probe(struct platform_device *pdev)
 			pr_err("%s: ERROR: no memory", __func__);
 			return  -ENOMEM;
 		}
+
+		pdev->dev.platform_data = plat_dat;
 
 		ret = stmmac_probe_config_dt(pdev, plat_dat, &mac);
 		if (ret) {

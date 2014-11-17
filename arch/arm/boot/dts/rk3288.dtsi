@@ -137,6 +137,13 @@
 		#clock-cells = <0>;
 	};
 
+	ext_gmac: external-gmac-clock {
+		compatible = "fixed-clock";
+		clock-frequency = <125000000>;
+		clock-output-names = "ext_gmac";
+		#clock-cells = <0>;
+	};
+
 	rockchip_timer@ff810000 {
 		compatible = "rockchip,timer";
 		reg = <0xff810000 0x20>;
@@ -683,6 +690,25 @@
 		interrupt-names = "isp_mmu";
 	};
 
+	gmac: eth@ff290000 {
+		compatible = "rockchip,rk3288-gmac";
+		reg = <0xff290000 0x10000>;
+		interrupts = <GIC_SPI 27 IRQ_TYPE_LEVEL_HIGH>;  /*irq=59*/
+		interrupt-names = "macirq";
+		rockchip,grf = <&grf>;
+		clocks = <&cru SCLK_MAC>, <&cru SCLK_MAC_PLL>,
+			<&cru SCLK_MAC_RX>, <&cru SCLK_MAC_TX>,
+			<&cru SCLK_MACREF>, <&cru SCLK_MACREF_OUT>,
+			<&cru ACLK_GMAC>, <&cru PCLK_GMAC>;
+		clock-names = "stmmaceth", "clk_mac_pll",
+				"mac_clk_rx", "mac_clk_tx",
+				"clk_mac_ref", "clk_mac_refout",
+				"aclk_mac", "pclk_mac";
+		phy-mode = "rgmii";
+		pinctrl-names = "default";
+		pinctrl-0 = <&rgmii_pin /*&rmii_pin*/>;
+	};
+
 	gpu: gpu@0xffa30000 {
 		compatible = "arm,malit764",
 			     "arm,malit76x",
@@ -1180,6 +1206,39 @@
 		pwm3 {
 			pwm3_pin: pwm3-pin {
 				rockchip,pins = <7 23 RK_FUNC_3 &pcfg_pull_none>;
+			};
+		};
+
+		gmac {
+			rgmii_pin: rgmii-pins {
+				rockchip,pins = <3 30 RK_FUNC_3 &pcfg_pull_none>, /*rxd0*/
+						<3 31 RK_FUNC_3 &pcfg_pull_none>, /*rxd1*/
+						<3 26 RK_FUNC_3 &pcfg_pull_none>, /*rxd2*/
+						<3 27 RK_FUNC_3 &pcfg_pull_none>, /*rxd3*/
+						<3 28 RK_FUNC_3 &pcfg_pull_none>, /*rxd0*/
+						<3 29 RK_FUNC_3 &pcfg_pull_none>, /*rxd1*/
+						<3 24 RK_FUNC_3 &pcfg_pull_none>, /*txd2*/
+						<3 25 RK_FUNC_3 &pcfg_pull_none>, /*txd3*/
+						<4 0 RK_FUNC_3 &pcfg_pull_none>, /*mdc*/
+						<4 5 RK_FUNC_3 &pcfg_pull_none>, /*mdio*/
+						<4 6 RK_FUNC_3 &pcfg_pull_none>, /*rx_clk*/
+						<4 9 RK_FUNC_3 &pcfg_pull_none>, /*tx_clk*/
+						<4 4 RK_FUNC_3 &pcfg_pull_none>, /*tx_en*/
+						<4 1 RK_FUNC_3 &pcfg_pull_none>, /*rx_dv*/
+						<4 3 RK_FUNC_3 &pcfg_pull_none>; /*mac_clk*/
+			};
+
+			rmii_pin: rmii-pins {
+				rockchip,pins = <3 30 RK_FUNC_3 &pcfg_pull_none>, /*rxd0*/
+						<3 31 RK_FUNC_3 &pcfg_pull_none>, /*rxd1*/
+						<3 28 RK_FUNC_3 &pcfg_pull_none>, /*rxd0*/
+						<3 29 RK_FUNC_3 &pcfg_pull_none>, /*rxd1*/
+						<4 0 RK_FUNC_3 &pcfg_pull_none>, /*mdc*/
+						<4 5 RK_FUNC_3 &pcfg_pull_none>, /*mdio*/
+						<4 4 RK_FUNC_3 &pcfg_pull_none>, /*tx_en*/
+						<4 1 RK_FUNC_3 &pcfg_pull_none>, /*rx_dv*/
+						<4 2 RK_FUNC_3 &pcfg_pull_none>, /*rx_err*/
+						<4 3 RK_FUNC_3 &pcfg_pull_none>; /*ref_clk*/
 			};
 		};
 	};
