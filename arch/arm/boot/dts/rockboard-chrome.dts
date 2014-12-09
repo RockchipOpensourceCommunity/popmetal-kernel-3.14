@@ -65,8 +65,10 @@
 	};
 
 	panel: panel {
-		compatible ="cnm,n116bgeea2","simple-panel";
+		compatible ="rockchip,vga","simple-panel";
 		status = "okay";
+		enable-gpios = <&gpio7 21 GPIO_ACTIVE_HIGH>;
+		ddc-i2c-bus = <&i2c2>;
 		backlight = <&backlight>;
 	};
 
@@ -470,7 +472,7 @@
 	status = "okay";
 };
 
-&edp {
+&lvds {
 	status = "okay";
 	rockchip,panel = <&panel>;
 };
@@ -480,10 +482,6 @@
 };
 
 &vopl_mmu {
-	status = "okay";
-};
-
-&hdmi {
 	status = "okay";
 };
 
