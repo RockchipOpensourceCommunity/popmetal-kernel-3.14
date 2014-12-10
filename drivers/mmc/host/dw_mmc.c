@@ -27,6 +27,7 @@
 #include <linux/stat.h>
 #include <linux/delay.h>
 #include <linux/irq.h>
+#include <linux/mmc/card.h>
 #include <linux/mmc/host.h>
 #include <linux/mmc/mmc.h>
 #include <linux/mmc/sd.h>
@@ -685,6 +686,7 @@ disable:
 
 static int dw_mci_submit_data_dma(struct dw_mci *host, struct mmc_data *data)
 {
+	unsigned long irqflags;
 	int sg_len;
 	u32 temp;
 
@@ -721,9 +723,11 @@ static int dw_mci_submit_data_dma(struct dw_mci *host, struct mmc_data *data)
 	mci_writel(host, CTRL, temp);
 
 	/* Disable RX/TX IRQs, let DMA handle it */
+	spin_lock_irqsave(&host->irq_lock, irqflags);
 	temp = mci_readl(host, INTMASK);
 	temp  &= ~(SDMMC_INT_RXDR | SDMMC_INT_TXDR);
 	mci_writel(host, INTMASK, temp);
+	spin_unlock_irqrestore(&host->irq_lock, irqflags);
 
 	host->dma_ops->start(host, sg_len);
 
@@ -732,6 +736,7 @@ static int dw_mci_submit_data_dma(struct dw_mci *host, struct mmc_data *data)
 
 static void dw_mci_submit_data(struct dw_mci *host, struct mmc_data *data)
 {
+	unsigned long irqflags;
 	u32 temp;
 
 	data->error = -EINPROGRESS;
@@ -760,9 +765,12 @@ static void dw_mci_submit_data(struct dw_mci *host, struct mmc_data *data)
 		host->part_buf_count = 0;
 
 		mci_writel(host, RINTSTS, SDMMC_INT_TXDR | SDMMC_INT_RXDR);
+
+		spin_lock_irqsave(&host->irq_lock, irqflags);
 		temp = mci_readl(host, INTMASK);
 		temp |= SDMMC_INT_TXDR | SDMMC_INT_RXDR;
 		mci_writel(host, INTMASK, temp);
+		spin_unlock_irqrestore(&host->irq_lock, irqflags);
 
 		temp = mci_readl(host, CTRL);
 		temp &= ~SDMMC_CTRL_DMA_ENABLE;
@@ -853,7 +861,7 @@ static void dw_mci_setup_bus(struct dw_mci_slot *slot, bool force_clkinit)
 
 		/* enable clock; only low power if no SDIO */
 		clk_en_a = SDMMC_CLKEN_ENABLE << slot->id;
-		if (!(mci_readl(host, INTMASK) & SDMMC_INT_SDIO(slot->sdio_id)))
+		if (!test_bit(DW_MMC_CARD_NO_LOW_PWR, &slot->flags))
 			clk_en_a |= SDMMC_CLKEN_LOW_PWR << slot->id;
 		mci_writel(host, CLKENA, clk_en_a);
 
@@ -1172,27 +1180,37 @@ static int dw_mci_get_cd(struct mmc_host *mmc)
 	return present;
 }
 
-/*
- * Disable lower power mode.
- *
- * Low power mode will stop the card clock when idle.  According to the
- * description of the CLKENA register we should disable low power mode
- * for SDIO cards if we need SDIO interrupts to work.
- *
- * This function is fast if low power mode is already disabled.
- */
-static void dw_mci_disable_low_power(struct dw_mci_slot *slot)
+static void dw_mci_init_card(struct mmc_host *mmc, struct mmc_card *card)
 {
+	struct dw_mci_slot *slot = mmc_priv(mmc);
 	struct dw_mci *host = slot->host;
-	u32 clk_en_a;
-	const u32 clken_low_pwr = SDMMC_CLKEN_LOW_PWR << slot->id;
 
-	clk_en_a = mci_readl(host, CLKENA);
+	/*
+	 * Low power mode will stop the card clock when idle.  According to the
+	 * description of the CLKENA register we should disable low power mode
+	 * for SDIO cards if we need SDIO interrupts to work.
+	 */
+	if (mmc->caps & MMC_CAP_SDIO_IRQ) {
+		const u32 clken_low_pwr = SDMMC_CLKEN_LOW_PWR << slot->id;
+		u32 clk_en_a_old;
+		u32 clk_en_a;
 
-	if (clk_en_a & clken_low_pwr) {
-		mci_writel(host, CLKENA, clk_en_a & ~clken_low_pwr);
-		mci_send_cmd(slot, SDMMC_CMD_UPD_CLK |
-			     SDMMC_CMD_PRV_DAT_WAIT, 0);
+		clk_en_a_old = mci_readl(host, CLKENA);
+
+		if (card->type == MMC_TYPE_SDIO ||
+		    card->type == MMC_TYPE_SD_COMBO) {
+			set_bit(DW_MMC_CARD_NO_LOW_PWR, &slot->flags);
+			clk_en_a = clk_en_a_old & ~clken_low_pwr;
+		} else {
+			clear_bit(DW_MMC_CARD_NO_LOW_PWR, &slot->flags);
+			clk_en_a = clk_en_a_old | clken_low_pwr;
+		}
+
+		if (clk_en_a != clk_en_a_old) {
+			mci_writel(host, CLKENA, clk_en_a);
+			mci_send_cmd(slot, SDMMC_CMD_UPD_CLK |
+				     SDMMC_CMD_PRV_DAT_WAIT, 0);
+		}
 	}
 }
 
@@ -1200,25 +1218,20 @@ static void dw_mci_enable_sdio_irq(struct mmc_host *mmc, int enb)
 {
 	struct dw_mci_slot *slot = mmc_priv(mmc);
 	struct dw_mci *host = slot->host;
+	unsigned long irqflags;
 	u32 int_mask;
+
+	spin_lock_irqsave(&host->irq_lock, irqflags);
 
 	/* Enable/disable Slot Specific SDIO interrupt */
 	int_mask = mci_readl(host, INTMASK);
-	if (enb) {
-		/*
-		 * Turn off low power mode if it was enabled.  This is a bit of
-		 * a heavy operation and we disable / enable IRQs a lot, so
-		 * we'll leave low power mode disabled and it will get
-		 * re-enabled again in dw_mci_setup_bus().
-		 */
-		dw_mci_disable_low_power(slot);
+	if (enb)
+		int_mask |= SDMMC_INT_SDIO(slot->sdio_id);
+	else
+		int_mask &= ~SDMMC_INT_SDIO(slot->sdio_id);
+	mci_writel(host, INTMASK, int_mask);
 
-		mci_writel(host, INTMASK,
-			   (int_mask | SDMMC_INT_SDIO(slot->sdio_id)));
-	} else {
-		mci_writel(host, INTMASK,
-			   (int_mask & ~SDMMC_INT_SDIO(slot->sdio_id)));
-	}
+	spin_unlock_irqrestore(&host->irq_lock, irqflags);
 }
 
 static int dw_mci_execute_tuning(struct mmc_host *mmc, u32 opcode)
@@ -1264,7 +1277,7 @@ static const struct mmc_host_ops dw_mci_ops = {
 	.execute_tuning		= dw_mci_execute_tuning,
 	.card_busy		= dw_mci_card_busy,
 	.start_signal_voltage_switch = dw_mci_switch_voltage,
-
+	.init_card		= dw_mci_init_card,
 };
 
 static void dw_mci_request_end(struct dw_mci *host, struct mmc_request *mrq)
@@ -1391,6 +1404,8 @@ static void dw_mci_tasklet_func(unsigned long priv)
 	enum dw_mci_state state;
 	enum dw_mci_state prev_state;
 	unsigned int err;
+	unsigned int drto_clks;
+	unsigned int drto_ms;
 
 	spin_lock(&host->lock);
 
@@ -1456,8 +1471,17 @@ static void dw_mci_tasklet_func(unsigned long priv)
 			}
 
 			if (!test_and_clear_bit(EVENT_XFER_COMPLETE,
-						&host->pending_events))
+						&host->pending_events)) {
+				if (host->quirks & DW_MCI_QUIRK_BROKEN_DTO) {
+					drto_clks = mci_readl(host, TMOUT) >> 8;
+					drto_ms = DIV_ROUND_UP(drto_clks * 1000,
+							       host->bus_hz);
+
+					mod_timer(&host->dto_timer, jiffies +
+						msecs_to_jiffies(drto_ms));
+				}
 				break;
+			}
 
 			set_bit(EVENT_XFER_COMPLETE, &host->completed_events);
 
@@ -2049,6 +2073,9 @@ static irqreturn_t dw_mci_interrupt(int irq, void *dev_id)
 		}
 
 		if (pending & SDMMC_INT_DATA_OVER) {
+			if (host->quirks & DW_MCI_QUIRK_BROKEN_DTO)
+				del_timer(&host->dto_timer);
+
 			mci_writel(host, RINTSTS, SDMMC_INT_DATA_OVER);
 			if (!host->data_status)
 				host->data_status = pending;
@@ -2408,6 +2435,28 @@ ciu_out:
 	return ret;
 }
 
+static void dw_mci_dto_timer(unsigned long arg)
+{
+	struct dw_mci *host = (struct dw_mci *)arg;
+
+	switch (host->state) {
+	case STATE_SENDING_DATA:
+	case STATE_DATA_BUSY:
+		/*
+		* If DTO interrupt does NOT come in sending data state,
+		* we should notify the driver to terminate current transfer
+		* and report a data timeout to the core.
+		*/
+		host->data_status = SDMMC_INT_DRTO;
+		set_bit(EVENT_DATA_ERROR, &host->pending_events);
+		set_bit(EVENT_DATA_COMPLETE, &host->pending_events);
+		tasklet_schedule(&host->tasklet);
+		break;
+	default:
+		break;
+	}
+}
+
 #ifdef CONFIG_OF
 static struct dw_mci_of_quirks {
 	char *quirk;
@@ -2559,7 +2608,11 @@ int dw_mci_probe(struct dw_mci *host)
 	host->quirks = host->pdata->quirks;
 
 	spin_lock_init(&host->lock);
+	spin_lock_init(&host->irq_lock);
 	INIT_LIST_HEAD(&host->queue);
+	if (host->quirks & DW_MCI_QUIRK_BROKEN_DTO)
+		setup_timer(&host->dto_timer,
+			    dw_mci_dto_timer, (unsigned long)host);
 
 	/*
 	 * Get the host data width - this assumes that HCON has been set with

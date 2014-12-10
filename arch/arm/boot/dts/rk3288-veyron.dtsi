@@ -233,13 +233,39 @@
 		regulator-boot-on;
 	};
 
+	bt_regulator: bt-regulator {
+		/*
+		 * On the module itself this is one of these (depending
+		 * on the actual card pouplated):
+		 * - BT_I2S_WS_BT_RFDISABLE_L
+		 * - No connect
+		 */
+
+		compatible = "regulator-fixed";
+		enable-active-high;
+		gpio = <&gpio4 29 GPIO_ACTIVE_HIGH>;
+		pinctrl-names = "default";
+		pinctrl-0 = <&bt_enable_l>;
+		regulator-name = "bt_regulator";
+	};
+
 	wifi_regulator: wifi-regulator {
+		/*
+		 * On the module itself this is one of these (depending
+		 * on the actual card populated):
+		 * - SDIO_RESET_L_WL_REG_ON
+		 * - PDN (power down when low)
+		 */
+
 		compatible = "regulator-fixed";
 		enable-active-high;
 		gpio = <&gpio4 28 GPIO_ACTIVE_HIGH>;
 		pinctrl-names = "default";
 		pinctrl-0 = <&wifi_enable_h>;
 		regulator-name = "wifi_regulator";
+
+		/* Faux input supply.  See bt_regulator description. */
+		vin-supply = <&bt_regulator>;
 	};
 
 	io-domains {
@@ -282,6 +308,7 @@
 	broken-cd;
 	bus-width = <4>;
 	cap-sd-highspeed;
+	cap-sdio-irq;
 	card-external-vcc-supply = <&wifi_regulator>;
 	clocks = <&cru HCLK_SDIO0>, <&cru SCLK_SDIO0>, <&rk808 RK808_CLKOUT1>;
 	clock-names = "biu", "ciu", "card_ext_clock";
@@ -346,8 +373,9 @@
 };
 
 &i2c0 {
-	clock-frequency = <400000>;
 	status = "okay";
+
+	clock-frequency = <400000>;
 
 	rk808: pmic@1b {
 		compatible = "rockchip,rk808";
@@ -505,6 +533,8 @@
 &i2c1 {
 	status = "okay";
 
+	clock-frequency = <400000>;
+
 	tpm: tpm@20 {
 		compatible = "infineon,slb9645tt";
 		reg = <0x20>;
@@ -514,6 +544,9 @@
 
 &i2c2 {
 	status = "okay";
+
+	/* 100kHz since 4.7k resistors don't rise fast enough */
+	clock-frequency = <100000>;
 
 	max98090: max98090@10 {
 		compatible = "maxim,max98090";
@@ -527,11 +560,14 @@
 
 &i2c3 {
 	status = "okay";
+
+	clock-frequency = <400000>;
 };
 
 &i2c4 {
-	clock-frequency = <400000>;
 	status = "okay";
+
+	clock-frequency = <400000>;
 
 	trackpad@15 {
 		compatible = "elan,i2c_touchpad";
@@ -556,10 +592,16 @@
 
 &i2c5 {
 	status = "okay";
+
+	clock-frequency = <100000>;
 };
 
 &i2s {
 	status = "okay";
+	assigned-clock-parents = <&cru SCLK_I2S0>;
+	assigned-clocks = <&cru SCLK_I2S0>, <&cru SCLK_I2S0_OUT>;
+	clock-names = "i2s_hclk", "i2s_clk", "i2s_clk_out";
+	clocks = <&cru HCLK_I2S0>, <&cru SCLK_I2S0>, <&cru SCLK_I2S0_OUT>;
 };
 
 &wdt {
@@ -576,6 +618,14 @@
 
 &uart0 {
 	status = "okay";
+
+	/* Pins don't include flow control by default; add that in */
+	pinctrl-names = "default";
+	pinctrl-0 = <&uart0_xfer &uart0_cts &uart0_rts>;
+
+	/* We need to go faster than 24MHz, so adjust clock parents / rates */
+	assigned-clocks = <&cru SCLK_UART0>;
+	assigned-clock-rates = <48000000>;
 };
 
 &uart1 {
@@ -693,6 +743,29 @@
 		emmc_deassert_reset: emmc-deassert-reset {
 			rockchip,pins = <7 12 RK_FUNC_GPIO &pcfg_pull_up>;
 		};
+
+		/*
+		 * We run eMMC at max speed; bump up drive strength.
+		 * We also have external pulls, so disable the internal ones.
+		 */
+		emmc_clk: emmc-clk {
+			rockchip,pins = <3 18 RK_FUNC_2 &pcfg_pull_none_drv_8ma>;
+		};
+
+		emmc_cmd: emmc-cmd {
+			rockchip,pins = <3 16 RK_FUNC_2 &pcfg_pull_none_drv_8ma>;
+		};
+
+		emmc_bus8: emmc-bus8 {
+			rockchip,pins = <3 0 RK_FUNC_2 &pcfg_pull_none_drv_8ma>,
+					<3 1 RK_FUNC_2 &pcfg_pull_none_drv_8ma>,
+					<3 2 RK_FUNC_2 &pcfg_pull_none_drv_8ma>,
+					<3 3 RK_FUNC_2 &pcfg_pull_none_drv_8ma>,
+					<3 4 RK_FUNC_2 &pcfg_pull_none_drv_8ma>,
+					<3 5 RK_FUNC_2 &pcfg_pull_none_drv_8ma>,
+					<3 6 RK_FUNC_2 &pcfg_pull_none_drv_8ma>,
+					<3 7 RK_FUNC_2 &pcfg_pull_none_drv_8ma>;
+		};
 	};
 
 	headset {
@@ -717,14 +790,42 @@
 		wifi_enable_h: wifienable-h {
 			rockchip,pins = <4 28 RK_FUNC_GPIO &pcfg_pull_none>;
 		};
+
+		/* NOTE: mislabelled on schematic; should be bt_enable_h */
+		bt_enable_l: bt-enable-l {
+			rockchip,pins = <4 29 RK_FUNC_GPIO &pcfg_pull_none>;
+		};
+
+		/*
+		 * We run sdio0 at max speed; bump up drive strength.
+		 * We also have external pulls, so disable the internal ones.
+		 */
+		sdio0_bus4: sdio0-bus4 {
+			rockchip,pins = <4 20 RK_FUNC_1 &pcfg_pull_none_drv_8ma>,
+					<4 21 RK_FUNC_1 &pcfg_pull_none_drv_8ma>,
+					<4 22 RK_FUNC_1 &pcfg_pull_none_drv_8ma>,
+					<4 23 RK_FUNC_1 &pcfg_pull_none_drv_8ma>;
+		};
+
+		sdio0_cmd: sdio0-cmd {
+			rockchip,pins = <4 24 RK_FUNC_1 &pcfg_pull_none_drv_8ma>;
+		};
+
+		sdio0_clk: sdio0-clk {
+			rockchip,pins = <4 25 RK_FUNC_1 &pcfg_pull_none_drv_8ma>;
+		};
 	};
 
 	sdmmc {
+		/*
+		 * We run sdmmc at max speed; bump up drive strength.
+		 * We also have external pulls, so disable the internal ones.
+		 */
 		sdmmc_bus4: sdmmc-bus4 {
-			rockchip,pins = <6 16 RK_FUNC_1 &pcfg_pull_up_drv_8ma>,
-				        <6 17 RK_FUNC_1 &pcfg_pull_up_drv_8ma>,
-					<6 18 RK_FUNC_1 &pcfg_pull_up_drv_8ma>,
-					<6 19 RK_FUNC_1 &pcfg_pull_up_drv_8ma>;
+			rockchip,pins = <6 16 RK_FUNC_1 &pcfg_pull_none_drv_8ma>,
+					<6 17 RK_FUNC_1 &pcfg_pull_none_drv_8ma>,
+					<6 18 RK_FUNC_1 &pcfg_pull_none_drv_8ma>,
+					<6 19 RK_FUNC_1 &pcfg_pull_none_drv_8ma>;
 		};
 
 		sdmmc_clk: sdmmc-clk {
@@ -732,7 +833,7 @@
 		};
 
 		sdmmc_cmd: sdmmc-cmd {
-			rockchip,pins = <6 21 RK_FUNC_1 &pcfg_pull_up_drv_8ma>;
+			rockchip,pins = <6 21 RK_FUNC_1 &pcfg_pull_none_drv_8ma>;
 		};
 
 		/*
@@ -747,7 +848,7 @@
 
 		/* This is where we actually hook up CD */
 		sdmmc_cd_gpio: sdmmc-cd-gpio {
-			rockchip,pins = <7 5 RK_FUNC_GPIO &pcfg_pull_up>;
+			rockchip,pins = <7 5 RK_FUNC_GPIO &pcfg_pull_none>;
 		};
 
 		sdmmc_wp_gpio: sdmmc-wp-gpio {

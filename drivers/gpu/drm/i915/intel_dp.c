@@ -3704,22 +3704,20 @@ intel_dp_init_panel_power_sequencer_registers(struct drm_device *dev,
 }
 
 static bool intel_edp_init_connector(struct intel_dp *intel_dp,
-				     struct intel_connector *intel_connector)
+				     struct intel_connector *intel_connector,
+				     struct edp_power_seq *power_seq)
 {
 	struct drm_connector *connector = &intel_connector->base;
 	struct intel_digital_port *intel_dig_port = dp_to_dig_port(intel_dp);
 	struct drm_device *dev = intel_dig_port->base.base.dev;
 	struct drm_i915_private *dev_priv = dev->dev_private;
 	struct drm_display_mode *fixed_mode = NULL;
-	struct edp_power_seq power_seq = { 0 };
 	bool has_dpcd;
 	struct drm_display_mode *scan;
 	struct edid *edid;
 
 	if (!is_edp(intel_dp))
 		return true;
-
-	intel_dp_init_panel_power_sequencer(dev, intel_dp, &power_seq);
 
 	/* Cache DPCD and EDID for edp. */
 	ironlake_edp_panel_vdd_on(intel_dp);
@@ -3738,9 +3736,9 @@ static bool intel_edp_init_connector(struct intel_dp *intel_dp,
 	}
 
 	/* We now know it's not a ghost, init power sequence regs. */
-	intel_dp_init_panel_power_sequencer_registers(dev, intel_dp,
-						      &power_seq);
+	intel_dp_init_panel_power_sequencer_registers(dev, intel_dp, power_seq);
 
+	mutex_lock(&dev->mode_config.mutex);
 	edid = drm_get_edid(connector, &intel_dp->adapter);
 	if (edid) {
 		if (drm_add_edid_modes(connector, edid)) {
@@ -3771,6 +3769,7 @@ static bool intel_edp_init_connector(struct intel_dp *intel_dp,
 		if (fixed_mode)
 			fixed_mode->type |= DRM_MODE_TYPE_PREFERRED;
 	}
+	mutex_unlock(&dev->mode_config.mutex);
 
 	intel_panel_init(&intel_connector->panel, fixed_mode);
 	intel_connector->panel.backlight_power = intel_edp_backlight_power;
@@ -3789,6 +3788,7 @@ intel_dp_init_connector(struct intel_digital_port *intel_dig_port,
 	struct drm_device *dev = intel_encoder->base.dev;
 	struct drm_i915_private *dev_priv = dev->dev_private;
 	enum port port = intel_dig_port->port;
+	struct edp_power_seq power_seq = { 0 };
 	const char *name = NULL;
 	int type, error;
 
@@ -3873,6 +3873,8 @@ intel_dp_init_connector(struct intel_digital_port *intel_dig_port,
 		BUG();
 	}
 
+	if (is_edp(intel_dp))
+		intel_dp_init_panel_power_sequencer(dev, intel_dp, &power_seq);
 
 	intel_dp_aux_init(intel_dp, intel_connector);
 
@@ -3880,7 +3882,7 @@ intel_dp_init_connector(struct intel_digital_port *intel_dig_port,
 	WARN(error, "intel_dp_i2c_init failed with error %d for port %c\n",
 	     error, port_name(port));
 
-	if (!intel_edp_init_connector(intel_dp, intel_connector)) {
+	if (!intel_edp_init_connector(intel_dp, intel_connector, &power_seq)) {
 		i2c_del_adapter(&intel_dp->adapter);
 		if (is_edp(intel_dp)) {
 			cancel_delayed_work_sync(&intel_dp->panel_vdd_work);

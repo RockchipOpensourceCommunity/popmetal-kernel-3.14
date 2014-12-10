@@ -113,21 +113,6 @@
 
 				google,remote-bus = <1>;
 
-				accel: lsm6ds0@6b {
-					compatible = "st,lsm6ds0";
-					reg = <0x6b>;
-					rot-matrix = /bits/ 16 <(1) (0) (0)
-								(0) (1) (0)
-								(0) (0) (1)>;
-					g-poll-interval = <100>;
-					g-min-interval = <2>;
-					g-fs-range = <0>;
-					x-poll-interval = <100>;
-					x-min-interval = <1>;
-					x-fs-range = <0>;
-					aa-filter-bw = <0>;
-				};
-
 				compass: ak09912@c {
 					compatible = "asahi-kasei,ak09912";
 					reg = <0xc>;
@@ -855,5 +840,18 @@
 				cpu-throt-level = <TEGRA_SOCTHERM_THROT_LEVEL_LOW>;
 			};
 		};
+	};
+
+	cpu_edp: cpu_edp {
+		compatible = "nvidia,tegra132-cpu-edp";
+		nvidia,edp-limit = <15000>;
+	};
+
+	cpu_edp_cap: cpu_edp_cdev_cap {
+		compatible = "nvidia,tegra132-cpu-edp-cdev-action";
+		act-dev = <&cpu_edp>;
+		cdev-type = "CPU-EDP-cap";
+
+		#cooling-cells = <2>; /* min followed by max */
 	};
 };

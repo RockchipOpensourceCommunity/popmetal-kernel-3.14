@@ -97,6 +97,7 @@ struct mmc_data;
  * @irq_flags: The flags to be passed to request_irq.
  * @irq: The irq value to be passed to request_irq.
  * @sdio_id0: Number of slot0 in the SDIO interrupt registers.
+ * @dto_timer: Timer for broken data transfer over scheme.
  *
  * Locking
  * =======
@@ -104,6 +105,11 @@ struct mmc_data;
  * @lock is a softirq-safe spinlock protecting @queue as well as
  * @cur_slot, @mrq and @state. These must always be updated
  * at the same time while holding @lock.
+ *
+ * @irq_lock is an irq-safe spinlock protecting the INTMASK register
+ * to allow the interrupt handler to modify it directly.  Held for only long
+ * enough to read-modify-write INTMASK and no other locks are grabbed when
+ * holding this one.
  *
  * The @mrq field of struct dw_mci_slot is also protected by @lock,
  * and must always be written at the same time as the slot is added to
@@ -124,6 +130,7 @@ struct mmc_data;
  */
 struct dw_mci {
 	spinlock_t		lock;
+	spinlock_t		irq_lock;
 	void __iomem		*regs;
 
 	struct scatterlist	*sg;
@@ -194,6 +201,8 @@ struct dw_mci {
 	int			irq;
 
 	int			sdio_id0;
+
+	struct timer_list	dto_timer;
 };
 
 /* DMA ops for Internal/External DMAC interface */
@@ -218,6 +227,8 @@ struct dw_mci_dma_ops {
 #define DW_MCI_QUIRK_BROKEN_CARD_DETECTION	BIT(3)
 /* No write protect */
 #define DW_MCI_QUIRK_NO_WRITE_PROTECT		BIT(4)
+/* Timer for broken data transfer over scheme */
+#define DW_MCI_QUIRK_BROKEN_DTO			BIT(5)
 
 /* Slot level quirks */
 /* This slot has no write protect */

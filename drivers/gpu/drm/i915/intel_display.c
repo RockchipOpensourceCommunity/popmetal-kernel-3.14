@@ -40,6 +40,7 @@
 #include <drm/drm_dp_helper.h>
 #include <drm/drm_crtc_helper.h>
 #include <linux/dma_remapping.h>
+#include <linux/pm_dark_resume.h>
 
 static void intel_increase_pllclock(struct drm_crtc *crtc);
 static void intel_crtc_update_cursor(struct drm_crtc *crtc, bool on);
@@ -1770,6 +1771,7 @@ static void intel_enable_pipe(struct drm_i915_private *dev_priv, enum pipe pipe,
 								      pipe);
 	enum pipe pch_transcoder;
 	int reg;
+	struct drm_device *dev = dev_priv->dev;
 	u32 val;
 
 	assert_planes_disabled(dev_priv, pipe);
@@ -1807,7 +1809,17 @@ static void intel_enable_pipe(struct drm_i915_private *dev_priv, enum pipe pipe,
 		return;
 
 	I915_WRITE(reg, val | PIPECONF_ENABLE);
-	intel_wait_for_vblank(dev_priv->dev, pipe);
+	POSTING_READ(reg);
+
+	/*
+	 * There's no guarantee the pipe will really start running now. It
+	 * depends on the Gen, the output type and the relative order between
+	 * pipe and plane enabling. Avoid waiting on HSW+ since it's not
+	 * necessary.
+	 * TODO: audit the previous gens.
+	 */
+	if (INTEL_INFO(dev)->gen <= 7 && !IS_HASWELL(dev))
+		intel_wait_for_vblank(dev_priv->dev, pipe);
 }
 
 /**
@@ -11461,6 +11473,11 @@ void intel_modeset_setup_hw_state(struct drm_device *dev,
 	int i;
 
 	intel_modeset_readout_hw_state(dev);
+
+	if (dev_dark_resume_active(dev->dev)) {
+		dev_info(dev->dev, "disabled for dark resume\n");
+		return;
+	}
 
 	/*
 	 * Now that we have the config, copy it to each CRTC struct

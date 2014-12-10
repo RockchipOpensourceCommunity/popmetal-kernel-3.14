@@ -134,6 +134,13 @@
  * used. A pointer to a &struct ubi_set_vol_prop_req object is expected to be
  * passed. The object describes which property should be set, and to which value
  * it should be set.
+ *
+ * Block devices on UBI volumes
+ * ~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+ *
+ * To create or remove a R/O block device on top of an UBI volume the
+ * %UBI_IOCVOLCRBLK and %UBI_IOCVOLRMBLK ioctl commands should be used,
+ * respectively. These commands take no arguments.
  */
 
 /*
@@ -191,6 +198,10 @@
 /* Set an UBI volume property */
 #define UBI_IOCSETVOLPROP _IOW(UBI_VOL_IOC_MAGIC, 6, \
 			       struct ubi_set_vol_prop_req)
+/* Create a R/O block device on top of an UBI volume */
+#define UBI_IOCVOLCRBLK _IO(UBI_VOL_IOC_MAGIC, 7)
+/* Remove the R/O block device */
+#define UBI_IOCVOLRMBLK _IO(UBI_VOL_IOC_MAGIC, 8)
 
 /* Maximum MTD device name length supported by UBI */
 #define MAX_UBI_MTD_NAME_LEN 127

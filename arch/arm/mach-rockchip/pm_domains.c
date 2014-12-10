@@ -36,6 +36,12 @@ struct rockchip_pmu_info {
 	u32 idle_offset;
 	u32 ack_offset;
 
+	u32 core_pwrcnt_offset;
+	u32 gpu_pwrcnt_offset;
+
+	unsigned int core_power_transition_time;
+	unsigned int gpu_power_transition_time;
+
 	int num_domains;
 	const struct rockchip_domain_info *domain_info;
 };
@@ -241,7 +247,6 @@ static int rockchip_pm_add_one_domain(struct rockchip_pmu *pmu,
 	int clk_cnt;
 	int i;
 	u32 id;
-	bool is_on;
 	int error;
 
 	error = of_property_read_u32(node, "reg", &id);
@@ -272,20 +277,8 @@ static int rockchip_pm_add_one_domain(struct rockchip_pmu *pmu,
 	if (!pd)
 		return -ENOMEM;
 
-	pd->genpd.name = node->name;
-	pd->genpd.power_off = rockchip_pd_power_off;
-	pd->genpd.power_on = rockchip_pd_power_on;
-	pd->genpd.attach_dev = rockchip_pd_attach_dev;
-	pd->genpd.detach_dev = rockchip_pd_detach_dev;
-	pd->genpd.dev_ops.start = rockchip_pd_start_dev;
-	pd->genpd.dev_ops.stop = rockchip_pd_stop_dev;
-
 	pd->info = pd_info;
 	pd->pmu = pmu;
-	pd->num_clks = clk_cnt;
-
-	is_on = rockchip_pmu_domain_is_on(pd);
-	pm_genpd_init(&pd->genpd, NULL, !is_on);
 
 	for (i = 0; i < clk_cnt; i++) {
 		clk = of_clk_get(node, i);
@@ -306,11 +299,28 @@ static int rockchip_pm_add_one_domain(struct rockchip_pmu *pmu,
 			goto err_out;
 		}
 
-		pd->clks[i] = clk;
+		pd->clks[pd->num_clks++] = clk;
 
 		dev_dbg(pmu->dev, "added clock '%s' to domain '%s'\n",
 			__clk_get_name(clk), node->name);
 	}
+
+	error = rockchip_pd_power(pd, true);
+	if (error) {
+		dev_err(pmu->dev,
+			"failed to power on domain '%s': %d\n",
+			node->name, error);
+		goto err_out;
+	}
+
+	pd->genpd.name = node->name;
+	pd->genpd.power_off = rockchip_pd_power_off;
+	pd->genpd.power_on = rockchip_pd_power_on;
+	pd->genpd.attach_dev = rockchip_pd_attach_dev;
+	pd->genpd.detach_dev = rockchip_pd_detach_dev;
+	pd->genpd.dev_ops.start = rockchip_pd_start_dev;
+	pd->genpd.dev_ops.stop = rockchip_pd_stop_dev;
+	pm_genpd_init(&pd->genpd, NULL, false);
 
 	pmu->genpd_data.domains[id] = &pd->genpd;
 	return 0;
@@ -350,6 +360,16 @@ static void rockchip_pm_domain_cleanup(struct rockchip_pmu *pmu)
 	}
 
 	/* devm will free our memory */
+}
+
+static void rockchip_configure_pd_cnt(struct rockchip_pmu *pmu,
+				      u32 domain_reg_offset,
+				      unsigned int count)
+{
+	/* First configure domain power down transition count ... */
+	regmap_write(pmu->regmap, domain_reg_offset, count);
+	/* ... and then power up count. */
+	regmap_write(pmu->regmap, domain_reg_offset + 4, count);
 }
 
 static int rockchip_pm_domain_probe(struct platform_device *pdev)
@@ -399,6 +419,15 @@ static int rockchip_pm_domain_probe(struct platform_device *pdev)
 		return error;
 	}
 
+	/*
+	 * Configure power up and down transition delays for core
+	 * and GPU domains.
+	 */
+	rockchip_configure_pd_cnt(pmu, pmu_info->core_pwrcnt_offset,
+				  pmu_info->core_power_transition_time);
+	rockchip_configure_pd_cnt(pmu, pmu_info->gpu_pwrcnt_offset,
+				  pmu_info->gpu_power_transition_time);
+
 	error = -ENXIO;
 
 	for_each_available_child_of_node(np, node) {
@@ -437,6 +466,13 @@ static const struct rockchip_pmu_info rk3288_pmu = {
 	.req_offset = 0x10,
 	.idle_offset = 0x14,
 	.ack_offset = 0x14,
+
+	.core_pwrcnt_offset = 0x34,
+	.gpu_pwrcnt_offset = 0x3c,
+
+	.core_power_transition_time = 24, /* 1us */
+	.gpu_power_transition_time = 24, /* 1us */
+
 	.num_domains = ARRAY_SIZE(rk3288_pm_domains),
 	.domain_info = rk3288_pm_domains,
 };
