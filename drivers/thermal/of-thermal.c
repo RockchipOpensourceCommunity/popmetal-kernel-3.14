@@ -198,8 +198,8 @@ static int of_thermal_bind(struct thermal_zone_device *thermal,
 
 			ret = thermal_zone_bind_cooling_device(thermal,
 						tbp->trip_id, cdev,
-						tbp->min,
-						tbp->max);
+						tbp->max,
+						tbp->min);
 			if (ret)
 				return ret;
 		}
@@ -790,11 +790,12 @@ thermal_of_build_thermal_zone(struct device_node *np)
 	}
 
 	i = 0;
-	for_each_child_of_node(child, gchild)
+	for_each_child_of_node(child, gchild) {
 		ret = thermal_of_populate_bind_params(gchild, &tz->tbps[i++],
 						      tz->trips, tz->ntrips);
 		if (ret)
 			goto free_tbps;
+	}
 
 finish:
 	of_node_put(child);
@@ -866,8 +867,11 @@ int __init of_parse_thermal_zones(void)
 			goto exit_free;
 		}
 
-		/* No hwmon because there might be hwmon drivers registering */
-		tzp->no_hwmon = true;
+		/*
+		 * Do not attach hwmon device unless explicitly requested,
+		 * since there might be dedicated hwmon drivers registering.
+		 */
+		tzp->no_hwmon = !of_property_read_bool(child, "linux,hwmon");
 
 		zone = thermal_zone_device_register(child->name, tz->ntrips,
 						    0, tz,
@@ -881,9 +885,9 @@ int __init of_parse_thermal_zones(void)
 			kfree(ops);
 			of_thermal_free_zone(tz);
 			/* attempting to build remaining zones still */
+		} else {
+			zone->np = child;
 		}
-
-		zone->np = child;
 	}
 
 	return 0;

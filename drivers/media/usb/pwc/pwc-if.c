@@ -614,7 +614,7 @@ static int buffer_prepare(struct vb2_buffer *vb)
 	return 0;
 }
 
-static int buffer_finish(struct vb2_buffer *vb)
+static void buffer_finish(struct vb2_buffer *vb)
 {
 	struct pwc_device *pdev = vb2_get_drv_priv(vb->vb2_queue);
 	struct pwc_frame_buf *buf = container_of(vb, struct pwc_frame_buf, vb);
@@ -624,7 +624,7 @@ static int buffer_finish(struct vb2_buffer *vb)
 	 * filled, take the pwc data we've stored in buf->data and decompress
 	 * it into a usable format, storing the result in the vb2_buffer
 	 */
-	return pwc_decompress(pdev, buf);
+	pwc_decompress(pdev, buf);
 }
 
 static void buffer_cleanup(struct vb2_buffer *vb)
@@ -678,12 +678,11 @@ static int start_streaming(struct vb2_queue *vq, unsigned int count)
 	return r;
 }
 
-static int stop_streaming(struct vb2_queue *vq)
+static void stop_streaming(struct vb2_queue *vq)
 {
 	struct pwc_device *pdev = vb2_get_drv_priv(vq);
 
-	if (mutex_lock_interruptible(&pdev->v4l2_lock))
-		return -ERESTARTSYS;
+	mutex_lock(&pdev->v4l2_lock);
 	if (pdev->udev) {
 		pwc_set_leds(pdev, 0, 0);
 		pwc_camera_power(pdev, 0);
@@ -692,8 +691,6 @@ static int stop_streaming(struct vb2_queue *vq)
 
 	pwc_cleanup_queued_bufs(pdev);
 	mutex_unlock(&pdev->v4l2_lock);
-
-	return 0;
 }
 
 static struct vb2_ops pwc_vb_queue_ops = {

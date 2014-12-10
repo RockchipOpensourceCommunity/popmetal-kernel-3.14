@@ -17,6 +17,7 @@
 #include <linux/clk.h>
 #include <linux/clk-provider.h>
 #include <linux/of.h>
+#include <linux/io.h>
 #include <linux/clk/tegra.h>
 #include <linux/reset-controller.h>
 
@@ -72,6 +73,9 @@ static int periph_banks;
 static struct clk **clks;
 static int clk_num;
 static struct clk_onecell_data clk_data;
+#ifdef CONFIG_PM_SLEEP
+static u32 *periph_ctx;
+#endif
 
 static struct tegra_clk_periph_regs periph_regs[] = {
 	[0] = {
@@ -136,9 +140,7 @@ static int tegra_clk_rst_assert(struct reset_controller_dev *rcdev,
 	 * knowledge of which reset IDs represent which devices, simply do
 	 * this all the time.
 	 */
-#if 0
 	tegra_read_chipid();
-#endif
 
 	writel_relaxed(BIT(id % 32),
 			clk_base + periph_regs[id / 32].rst_set_reg);
@@ -154,6 +156,63 @@ static int tegra_clk_rst_deassert(struct reset_controller_dev *rcdev,
 
 	return 0;
 }
+
+#ifdef CONFIG_PM_SLEEP
+void tegra_clk_periph_suspend(void __iomem *clk_base)
+{
+	int i, idx;
+
+	idx = 0;
+	for (i = 0; i < periph_banks; i++, idx++)
+		periph_ctx[idx] =
+			readl_relaxed(clk_base + periph_regs[i].rst_reg);
+
+	for (i = 0; i < periph_banks; i++, idx++)
+		periph_ctx[idx] =
+			readl_relaxed(clk_base + periph_regs[i].enb_reg);
+}
+
+void tegra_clk_periph_force_on(u32 *clks_on, int count, void __iomem *clk_base)
+{
+	int i;
+
+	WARN_ON(count != periph_banks);
+
+	for (i = 0; i < count; i++)
+		writel_relaxed(clks_on[i], clk_base + periph_regs[i].enb_reg);
+}
+
+void tegra_clk_periph_resume(void __iomem *clk_base)
+{
+	int i, idx;
+
+	idx = 0;
+	for (i = 0; i < periph_banks; i++, idx++)
+		writel_relaxed(periph_ctx[idx],
+			clk_base + periph_regs[i].rst_reg);
+
+	/* ensure all resets have propagated */
+	tegra_read_chipid();
+
+	for (i = 0; i < periph_banks; i++, idx++)
+		writel_relaxed(periph_ctx[idx],
+			clk_base + periph_regs[i].enb_reg);
+
+	/* ensure all enables have propagated */
+	tegra_read_chipid();
+}
+
+static int tegra_clk_suspend_ctx_init(int banks)
+{
+	int err = 0;
+
+	periph_ctx = kzalloc(2 * banks * sizeof(*periph_ctx), GFP_KERNEL);
+	if (!periph_ctx)
+		err = -ENOMEM;
+
+	return err;
+}
+#endif
 
 struct tegra_clk_periph_regs *get_reg_bank(int clkid)
 {
@@ -182,10 +241,20 @@ struct clk ** __init tegra_clk_init(void __iomem *regs, int num, int banks)
 	periph_banks = banks;
 
 	clks = kzalloc(num * sizeof(struct clk *), GFP_KERNEL);
-	if (!clks)
+	if (!clks) {
 		kfree(periph_clk_enb_refcnt);
+		return NULL;
+	}
 
 	clk_num = num;
+
+#ifdef CONFIG_PM_SLEEP
+	if (tegra_clk_suspend_ctx_init(banks)) {
+		kfree(periph_clk_enb_refcnt);
+		kfree(clks);
+		return NULL;
+	}
+#endif
 
 	return clks;
 }

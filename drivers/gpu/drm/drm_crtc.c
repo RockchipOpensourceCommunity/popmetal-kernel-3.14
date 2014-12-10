@@ -44,6 +44,8 @@ static struct drm_framebuffer *add_framebuffer_internal(struct drm_device *dev,
 							struct drm_mode_fb_cmd2 *r,
 							struct drm_file *file_priv);
 
+#include "drm_crtc_internal.h"
+
 /**
  * drm_modeset_lock_all - take all modeset locks
  * @dev: drm device
@@ -402,8 +404,8 @@ EXPORT_SYMBOL(drm_get_format_name);
  * New unique (relative to other objects in @dev) integer identifier for the
  * object.
  */
-static int drm_mode_object_get(struct drm_device *dev,
-			       struct drm_mode_object *obj, uint32_t obj_type)
+int drm_mode_object_get(struct drm_device *dev,
+			struct drm_mode_object *obj, uint32_t obj_type)
 {
 	int ret;
 
@@ -431,8 +433,8 @@ static int drm_mode_object_get(struct drm_device *dev,
  * postfix modeset identifiers are _not_ reference counted. Hence don't use this
  * for reference counted modeset objects like framebuffers.
  */
-static void drm_mode_object_put(struct drm_device *dev,
-				struct drm_mode_object *object)
+void drm_mode_object_put(struct drm_device *dev,
+			 struct drm_mode_object *object)
 {
 	mutex_lock(&dev->mode_config.idr_mutex);
 	idr_remove(&dev->mode_config.crtc_idr, object->id);
@@ -1077,20 +1079,6 @@ int drm_crtc_set_property(struct drm_crtc *crtc,
 }
 EXPORT_SYMBOL(drm_crtc_set_property);
 
-/**
- * drm_mode_probed_add - add a mode to a connector's probed mode list
- * @connector: connector the new mode
- * @mode: mode data
- *
- * Add @mode to @connector's mode list for later use.
- */
-void drm_mode_probed_add(struct drm_connector *connector,
-			 struct drm_display_mode *mode)
-{
-	list_add_tail(&mode->head, &connector->probed_modes);
-}
-EXPORT_SYMBOL(drm_mode_probed_add);
-
 /*
  * drm_mode_remove - remove and free a mode
  * @connector: connector list to modify
@@ -1209,6 +1197,34 @@ void drm_connector_cleanup(struct drm_connector *connector)
 EXPORT_SYMBOL(drm_connector_cleanup);
 
 /**
+ * drm_connector_register - register a connector
+ * @connector: the connector to register
+ *
+ * Register userspace interfaces for a connector
+ *
+ * Returns:
+ * Zero on success, error code on failure.
+ */
+int drm_connector_register(struct drm_connector *connector)
+{
+	return drm_sysfs_connector_add(connector);
+}
+EXPORT_SYMBOL(drm_connector_register);
+
+/**
+ * drm_connector_unregister - unregister a connector
+ * @connector: the connector to unregister
+ *
+ * Unregister userspace interfaces for a connector
+ */
+void drm_connector_unregister(struct drm_connector *connector)
+{
+	drm_sysfs_connector_remove(connector);
+}
+EXPORT_SYMBOL(drm_connector_unregister);
+
+
+/**
  * drm_connector_unplug_all - unregister connector userspace interfaces
  * @dev: drm device
  *
@@ -1222,7 +1238,7 @@ void drm_connector_unplug_all(struct drm_device *dev)
 
 	/* taking the mode config mutex ends up in a clash with sysfs */
 	list_for_each_entry(connector, &dev->mode_config.connector_list, head)
-		drm_sysfs_connector_remove(connector);
+		drm_connector_unregister(connector);
 
 }
 EXPORT_SYMBOL(drm_connector_unplug_all);
@@ -1653,50 +1669,6 @@ void drm_plane_force_disable(struct drm_plane *plane,
 		config->prop_fb_id, 0, NULL);
 }
 EXPORT_SYMBOL(drm_plane_force_disable);
-
-/**
- * drm_mode_create - create a new display mode
- * @dev: DRM device
- *
- * Create a new drm_display_mode, give it an ID, and return it.
- *
- * RETURNS:
- * Pointer to new mode on success, NULL on error.
- */
-struct drm_display_mode *drm_mode_create(struct drm_device *dev)
-{
-	struct drm_display_mode *nmode;
-
-	nmode = kzalloc(sizeof(struct drm_display_mode), GFP_KERNEL);
-	if (!nmode)
-		return NULL;
-
-	if (drm_mode_object_get(dev, &nmode->base, DRM_MODE_OBJECT_MODE)) {
-		kfree(nmode);
-		return NULL;
-	}
-
-	return nmode;
-}
-EXPORT_SYMBOL(drm_mode_create);
-
-/**
- * drm_mode_destroy - remove a mode
- * @dev: DRM device
- * @mode: mode to remove
- *
- * Free @mode's unique identifier, then free it.
- */
-void drm_mode_destroy(struct drm_device *dev, struct drm_display_mode *mode)
-{
-	if (!mode)
-		return;
-
-	drm_mode_object_put(dev, &mode->base);
-
-	kfree(mode);
-}
-EXPORT_SYMBOL(drm_mode_destroy);
 
 static int drm_mode_create_standard_connector_properties(struct drm_device *dev)
 {
@@ -4416,8 +4388,10 @@ int drm_mode_connector_update_edid_property(struct drm_connector *connector,
 	struct drm_property *edid_prop = dev->mode_config.edid_property;
 	int i, ret, size;
 
-	if (connector->edid_blob_ptr)
+	if (connector->edid_blob_ptr) {
 		drm_property_destroy_blob(dev, connector->edid_blob_ptr);
+		connector->edid_blob_ptr = NULL;
+	}
 
 	/* Delete edid, when there is none. */
 	if (!edid) {

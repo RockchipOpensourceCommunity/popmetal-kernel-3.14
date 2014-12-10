@@ -1182,6 +1182,12 @@ enum modeset_restore {
 };
 
 struct ddi_vbt_port_info {
+	/*
+	 * This is an index in the HDMI/DVI DDI buffer translation table.
+	 * The special value HDMI_LEVEL_SHIFT_UNKNOWN means the VBT didn't
+	 * populate this field.
+	 */
+#define HDMI_LEVEL_SHIFT_UNKNOWN	0xff
 	uint8_t hdmi_level_shift;
 
 	uint8_t supports_dvi:1;
@@ -1227,6 +1233,7 @@ struct intel_vbt_data {
 		 * Example, 5 = 5% = .05
 		 */
 		u8 min_duty_cycle_percentage;
+		u8 min_brightness;	/* min_brightness/255 of max */
 	} backlight;
 
 	/* MIPI DSI */
@@ -2488,6 +2495,7 @@ extern void intel_modeset_suspend_hw(struct drm_device *dev);
 extern void intel_modeset_init(struct drm_device *dev);
 extern void intel_modeset_gem_init(struct drm_device *dev);
 extern void intel_modeset_cleanup(struct drm_device *dev);
+extern void intel_connector_unregister(struct intel_connector *);
 extern int intel_modeset_vga_set_state(struct drm_device *dev, bool state);
 extern void intel_modeset_setup_hw_state(struct drm_device *dev,
 					 bool force_restore);

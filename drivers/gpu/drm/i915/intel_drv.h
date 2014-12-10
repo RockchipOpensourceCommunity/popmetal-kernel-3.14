@@ -25,6 +25,7 @@
 #ifndef __INTEL_DRV_H__
 #define __INTEL_DRV_H__
 
+#include <linux/async.h>
 #include <linux/i2c.h>
 #include <linux/hdmi.h>
 #include <drm/i915_drm.h>
@@ -169,12 +170,15 @@ struct intel_panel {
 	struct {
 		bool present;
 		u32 level;
+		u32 min;
 		u32 max;
 		bool enabled;
 		bool combination_mode;	/* gen 2/4 only */
 		bool active_low_pwm;
 		struct backlight_device *device;
 	} backlight;
+
+	void (*backlight_power)(struct intel_connector *, bool enable);
 };
 
 struct intel_connector {
@@ -193,6 +197,14 @@ struct intel_connector {
 	/* Reads out the current hw, returning true if the connector is enabled
 	 * and active (i.e. dpms ON state). */
 	bool (*get_hw_state)(struct intel_connector *);
+
+	/*
+	 * Removes all interfaces through which the connector is accessible
+	 * - like sysfs, debugfs entries -, so that no new operations can be
+	 * started on the connector. Also makes sure all currently pending
+	 * operations finish before returing.
+	 */
+	void (*unregister)(struct intel_connector *);
 
 	/* Panel info for eDP and LVDS */
 	struct intel_panel panel;
@@ -743,6 +755,7 @@ void intel_dp_check_link_status(struct intel_dp *intel_dp);
 bool intel_dp_compute_config(struct intel_encoder *encoder,
 			     struct intel_crtc_config *pipe_config);
 bool intel_dp_is_edp(struct drm_device *dev, enum port port);
+bool intel_dp_is_reversed(struct intel_dp *intel_dp, uint32_t DP);
 void ironlake_edp_backlight_on(struct intel_dp *intel_dp);
 void ironlake_edp_backlight_off(struct intel_dp *intel_dp);
 void ironlake_edp_panel_on(struct intel_dp *intel_dp);
@@ -765,7 +778,7 @@ void intel_dvo_init(struct drm_device *dev);
 /* legacy fbdev emulation in intel_fbdev.c */
 #ifdef CONFIG_DRM_I915_FBDEV
 extern int intel_fbdev_init(struct drm_device *dev);
-extern void intel_fbdev_initial_config(struct drm_device *dev);
+extern void intel_fbdev_initial_config(void *data, async_cookie_t cookie);
 extern void intel_fbdev_fini(struct drm_device *dev);
 extern void intel_fbdev_set_suspend(struct drm_device *dev, int state);
 extern void intel_fbdev_output_poll_changed(struct drm_device *dev);
@@ -776,7 +789,7 @@ static inline int intel_fbdev_init(struct drm_device *dev)
 	return 0;
 }
 
-static inline void intel_fbdev_initial_config(struct drm_device *dev)
+static inline void intel_fbdev_initial_config(void *data, async_cookie_t cookie)
 {
 }
 
@@ -837,8 +850,8 @@ void intel_pch_panel_fitting(struct intel_crtc *crtc,
 void intel_gmch_panel_fitting(struct intel_crtc *crtc,
 			      struct intel_crtc_config *pipe_config,
 			      int fitting_mode);
-void intel_panel_set_backlight(struct intel_connector *connector, u32 level,
-			       u32 max);
+void intel_panel_set_backlight_acpi(struct intel_connector *connector,
+				    u32 level, u32 max);
 u32 intel_panel_get_backlight(struct intel_connector *connector);
 int intel_panel_setup_backlight(struct drm_connector *connector);
 void intel_panel_enable_backlight(struct intel_connector *connector);

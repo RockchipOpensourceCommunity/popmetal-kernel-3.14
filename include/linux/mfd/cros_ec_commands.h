@@ -292,6 +292,9 @@ enum host_event_code {
 	/* PD MCU triggering host event */
 	EC_HOST_EVENT_PD_MCU = 22,
 
+	/* Battery Status flags have changed */
+	EC_HOST_EVENT_BATTERY_STATUS = 23,
+
 	/*
 	 * The high bit of the event mask is not used as a host event code.  If
 	 * it reads back as set, then the entire event mask should be
@@ -929,8 +932,15 @@ struct ec_response_pwm_get_fan_rpm {
 /* Set target fan RPM */
 #define EC_CMD_PWM_SET_FAN_TARGET_RPM 0x21
 
-struct ec_params_pwm_set_fan_target_rpm {
+/* Version 0 of input params */
+struct ec_params_pwm_set_fan_target_rpm_v0 {
 	uint32_t rpm;
+} __packed;
+
+/* Version 1 of input params */
+struct ec_params_pwm_set_fan_target_rpm_v1 {
+	uint32_t rpm;
+	uint8_t fan_idx;
 } __packed;
 
 /* Get keyboard backlight */
@@ -951,8 +961,15 @@ struct ec_params_pwm_set_keyboard_backlight {
 /* Set target fan PWM duty cycle */
 #define EC_CMD_PWM_SET_FAN_DUTY 0x24
 
-struct ec_params_pwm_set_fan_duty {
+/* Version 0 of input params */
+struct ec_params_pwm_set_fan_duty_v0 {
 	uint32_t percent;
+} __packed;
+
+/* Version 1 of input params */
+struct ec_params_pwm_set_fan_duty_v1 {
+	uint32_t percent;
+	uint8_t fan_idx;
 } __packed;
 
 /*****************************************************************************/
@@ -1018,6 +1035,7 @@ struct lightbar_params_v1 {
 	int32_t s3_ramp_up;
 	int32_t s3_ramp_down;
 	int32_t tap_tick_delay;
+	int32_t tap_gate_delay;
 	int32_t tap_display_time;
 
 	/* Tap-for-battery params */
@@ -1304,18 +1322,6 @@ enum motionsense_command {
 	MOTIONSENSE_NUM_CMDS
 };
 
-enum motionsensor_id {
-	EC_MOTION_SENSOR_ACCEL_BASE = 0,
-	EC_MOTION_SENSOR_ACCEL_LID = 1,
-	EC_MOTION_SENSOR_GYRO = 2,
-
-	/*
-	 * Note, if more sensors are added and this count changes, the padding
-	 * in ec_response_motion_sense dump command must be modified.
-	 */
-	EC_MOTION_SENSOR_COUNT = 3
-};
-
 /* List of motion sensor types. */
 enum motionsensor_type {
 	MOTIONSENSE_TYPE_ACCEL = 0,
@@ -1350,9 +1356,14 @@ enum motionsensor_chip {
 struct ec_params_motion_sense {
 	uint8_t cmd;
 	union {
-		/* Used for MOTIONSENSE_CMD_DUMP. */
+		/* Used for MOTIONSENSE_CMD_DUMP */
 		struct {
-			/* no args */
+			/*
+			 * Maximal number of sensor the host is expecting.
+			 * 0 means the host is only interested in the number
+			 * of sensors controlled by the EC.
+			 */
+			uint8_t max_sensor_count;
 		} dump;
 
 		/*
@@ -1366,7 +1377,6 @@ struct ec_params_motion_sense {
 
 		/* Used for MOTIONSENSE_CMD_INFO. */
 		struct {
-			/* Should be element of enum motionsensor_id. */
 			uint8_t sensor_num;
 		} info;
 
@@ -1375,7 +1385,6 @@ struct ec_params_motion_sense {
 		 * MOTIONSENSE_CMD_SENSOR_RANGE.
 		 */
 		struct {
-			/* Should be element of enum motionsensor_id. */
 			uint8_t sensor_num;
 
 			/* Rounding flag, true for round-up, false for down. */
@@ -1389,18 +1398,30 @@ struct ec_params_motion_sense {
 	};
 } __packed;
 
+struct ec_response_motion_sensor_data {
+	/* Flags for each sensor. */
+	uint8_t flags;
+	uint8_t padding;
+
+	/* Each sensor is up to 3-axis. */
+	int16_t data[3];
+} __packed;
+
 struct ec_response_motion_sense {
 	union {
-		/* Used for MOTIONSENSE_CMD_DUMP. */
+		/* Used for MOTIONSENSE_CMD_DUMP */
 		struct {
 			/* Flags representing the motion sensor module. */
 			uint8_t module_flags;
 
-			/* Flags for each sensor in enum motionsensor_id. */
-			uint8_t sensor_flags[EC_MOTION_SENSOR_COUNT];
+			/* Number of sensors managed directly by the EC */
+			uint8_t sensor_count;
 
-			/* Array of all sensor data. Each sensor is 3-axis. */
-			int16_t data[3*EC_MOTION_SENSOR_COUNT];
+			/*
+			 * sensor data is truncated if response_max is too small
+			 * for holding all the data.
+			 */
+			struct ec_response_motion_sensor_data sensor[0];
 		} dump;
 
 		/* Used for MOTIONSENSE_CMD_INFO. */
@@ -1425,6 +1446,16 @@ struct ec_response_motion_sense {
 			int32_t ret;
 		} ec_rate, sensor_odr, sensor_range, kb_wake_angle;
 	};
+} __packed;
+
+/*****************************************************************************/
+/* Force lid open command */
+
+/* Make lid event always open */
+#define EC_CMD_FORCE_LID_OPEN 0x2c
+
+struct ec_params_force_lid_open {
+	uint8_t enabled;
 } __packed;
 
 /*****************************************************************************/
@@ -1606,31 +1637,62 @@ struct ec_params_thermal_set_threshold_v1 {
 /* Toggle automatic fan control */
 #define EC_CMD_THERMAL_AUTO_FAN_CTRL 0x52
 
-/* Get TMP006 calibration data */
-#define EC_CMD_TMP006_GET_CALIBRATION 0x53
+/* Version 1 of input params */
+struct ec_params_auto_fan_ctrl_v1 {
+	uint8_t fan_idx;
+} __packed;
 
+/* Get/Set TMP006 calibration data */
+#define EC_CMD_TMP006_GET_CALIBRATION 0x53
+#define EC_CMD_TMP006_SET_CALIBRATION 0x54
+
+/*
+ * The original TMP006 calibration only needed four params, but now we need
+ * more. Since the algorithm is nothing but magic numbers anyway, we'll leave
+ * the params opaque. The v1 "get" response will include the algorithm number
+ * and how many params it requires. That way we can change the EC code without
+ * needing to update this file. We can also use a different algorithm on each
+ * sensor.
+ */
+
+/* This is the same struct for both v0 and v1. */
 struct ec_params_tmp006_get_calibration {
 	uint8_t index;
 } __packed;
 
-struct ec_response_tmp006_get_calibration {
+/* Version 0 */
+struct ec_response_tmp006_get_calibration_v0 {
 	float s0;
 	float b0;
 	float b1;
 	float b2;
 } __packed;
 
-/* Set TMP006 calibration data */
-#define EC_CMD_TMP006_SET_CALIBRATION 0x54
-
-struct ec_params_tmp006_set_calibration {
+struct ec_params_tmp006_set_calibration_v0 {
 	uint8_t index;
-	uint8_t reserved[3];  /* Reserved; set 0 */
+	uint8_t reserved[3];
 	float s0;
 	float b0;
 	float b1;
 	float b2;
 } __packed;
+
+/* Version 1 */
+struct ec_response_tmp006_get_calibration_v1 {
+	uint8_t algorithm;
+	uint8_t num_params;
+	uint8_t reserved[2];
+	float val[0];
+} __packed;
+
+struct ec_params_tmp006_set_calibration_v1 {
+	uint8_t index;
+	uint8_t algorithm;
+	uint8_t num_params;
+	uint8_t reserved;
+	float val[0];
+} __packed;
+
 
 /* Read raw TMP006 data */
 #define EC_CMD_TMP006_GET_RAW 0x55
@@ -1777,6 +1839,29 @@ struct ec_result_keyscan_seq_ctrl {
 			struct ec_collect_item item[0];
 		} collect;
 	};
+} __packed;
+
+/*
+ * Get the next pending MKBP event.
+ *
+ * Returns EC_RES_UNAVAILABLE if there is no event pending.
+ */
+#define EC_CMD_GET_NEXT_EVENT 0x67
+
+enum ec_mkbp_event {
+	/* Keyboard matrix changed. The event data is the new matrix state. */
+	EC_MKBP_EVENT_KEY_MATRIX = 0,
+
+	/* New host event. The event data is 4 bytes of host event flags. */
+	EC_MKBP_EVENT_HOST_EVENT = 1,
+
+	/* Number of MKBP events */
+	EC_MKBP_EVENT_COUNT,
+};
+
+struct ec_response_get_next_event {
+	uint8_t event_type;
+	/* Followed by event data if any */
 } __packed;
 
 /*****************************************************************************/
@@ -2607,6 +2692,17 @@ struct ec_response_pd_status {
 	uint32_t curr_lim_ma; /* input current limit */
 } __packed;
 
+/* AP to PD MCU host event status command, cleared on read */
+#define EC_CMD_PD_HOST_EVENT_STATUS 0x104
+
+/* PD MCU host event status bits */
+#define PD_EVENT_UPDATE_DEVICE     (1 << 0)
+#define PD_EVENT_POWER_CHANGE      (1 << 1)
+#define PD_EVENT_IDENTITY_RECEIVED (1 << 2)
+struct ec_response_host_event_status {
+	uint32_t status;      /* PD MCU host event status */
+} __packed;
+
 /* Set USB type-C port role and muxes */
 #define EC_CMD_USB_PD_CONTROL 0x101
 
@@ -2642,6 +2738,48 @@ struct ec_response_usb_pd_control {
 	uint8_t state;
 } __packed;
 
+#define EC_CMD_USB_PD_PORTS 0x102
+
+struct ec_response_usb_pd_ports {
+	uint8_t num_ports;
+} __packed;
+
+#define EC_CMD_USB_PD_POWER_INFO 0x103
+
+#define PD_POWER_CHARGING_PORT 0xff
+struct ec_params_usb_pd_power_info {
+	uint8_t port;
+} __packed;
+
+enum usb_chg_type {
+	USB_CHG_TYPE_NONE,
+	USB_CHG_TYPE_PD,
+	USB_CHG_TYPE_C,
+	USB_CHG_TYPE_PROPRIETARY,
+	USB_CHG_TYPE_BC12_DCP,
+	USB_CHG_TYPE_BC12_CDP,
+	USB_CHG_TYPE_BC12_SDP,
+	USB_CHG_TYPE_OTHER
+};
+enum usb_power_roles {
+	USB_PD_PORT_POWER_DISCONNECTED,
+	USB_PD_PORT_POWER_SOURCE,
+	USB_PD_PORT_POWER_SINK,
+	USB_PD_PORT_POWER_SINK_NOT_CHARGING,
+};
+
+struct ec_response_usb_pd_power_info {
+	uint8_t role;
+	uint8_t type;
+	uint8_t dualrole;
+	uint8_t reserved1;
+	uint16_t voltage_max;
+	uint16_t voltage_now;
+	uint16_t current_max;
+	uint16_t reserved2;
+	uint32_t max_power;
+} __packed;
+
 /* Write USB-PD device FW */
 #define EC_CMD_USB_PD_FW_UPDATE 0x110
 
@@ -2666,10 +2804,7 @@ struct ec_params_usb_pd_fw_update {
 #define PD_RW_HASH_SIZE 20
 struct ec_params_usb_pd_rw_hash_entry {
 	uint16_t dev_id;
-	union {
-		uint8_t b[PD_RW_HASH_SIZE];
-		uint32_t w[PD_RW_HASH_SIZE/4];
-	} dev_rw_hash;
+	uint8_t dev_rw_hash[PD_RW_HASH_SIZE];
 } __packed;
 
 /* Read USB-PD Accessory info */
@@ -2679,6 +2814,27 @@ struct ec_params_usb_pd_info_request {
 	uint8_t port;
 } __packed;
 
+/* Read USB-PD Device discovery info */
+#define EC_CMD_USB_PD_DISCOVERY 0x113
+struct ec_params_usb_pd_discovery_entry {
+	uint16_t vid;  /* USB-IF VID */
+	uint16_t pid;  /* USB-IF PID */
+	uint8_t ptype; /* product type (hub,periph,cable,ama) */
+} __packed;
+
+/* Override default charge behavior */
+#define EC_CMD_PD_CHARGE_PORT_OVERRIDE 0x114
+
+/* Negative port parameters have special meaning */
+enum usb_pd_override_ports {
+	OVERRIDE_DONT_CHARGE = -2,
+	OVERRIDE_OFF = -1,
+	/* [0, PD_PORT_COUNT): Port# */
+};
+
+struct ec_params_charge_port_override {
+	int16_t override_port; /* Override port# */
+} __packed;
 #endif  /* !__ACPI__ */
 
 /*****************************************************************************/

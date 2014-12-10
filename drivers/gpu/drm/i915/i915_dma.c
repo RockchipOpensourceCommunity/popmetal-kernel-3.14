@@ -28,6 +28,7 @@
 
 #define pr_fmt(fmt) KBUILD_MODNAME ": " fmt
 
+#include <linux/async.h>
 #include <drm/drmP.h>
 #include <drm/drm_crtc_helper.h>
 #include <drm/drm_fb_helper.h>
@@ -1364,7 +1365,7 @@ static int i915_load_modeset_init(struct drm_device *dev)
 	 * scanning against hotplug events. Hence do this first and ignore the
 	 * tiny window where we will loose hotplug notifactions.
 	 */
-	intel_fbdev_initial_config(dev);
+	async_schedule(intel_fbdev_initial_config, dev_priv);
 
 	/* Only enable hotplug handling once the fbdev is fully set up. */
 	dev_priv->enable_hotplug_processing = true;
@@ -1947,7 +1948,7 @@ const struct drm_ioctl_desc i915_ioctls[] = {
 	DRM_IOCTL_DEF_DRV(I915_GET_RESET_STATS, i915_get_reset_stats_ioctl, DRM_UNLOCKED|DRM_RENDER_ALLOW),
 };
 
-int i915_max_ioctl = DRM_ARRAY_SIZE(i915_ioctls);
+int i915_max_ioctl = ARRAY_SIZE(i915_ioctls);
 
 /*
  * This is really ugly: Because old userspace abused the linux agp interface to

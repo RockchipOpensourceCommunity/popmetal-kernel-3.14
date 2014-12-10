@@ -3,6 +3,7 @@
 #include <dt-bindings/memory/tegra-swgroup.h>
 #include <dt-bindings/gpio/tegra-gpio.h>
 #include <dt-bindings/pinctrl/pinctrl-tegra.h>
+#include <dt-bindings/pinctrl/pinctrl-tegra-xusb.h>
 #include <dt-bindings/interrupt-controller/arm-gic.h>
 #include <dt-bindings/thermal/tegra124-soctherm.h>
 #include <dt-bindings/thermal/tegra132-dfll-trips.h>
@@ -143,6 +144,16 @@
 		      <0x0 0x50046000 0x0 0x2000>;
 		interrupts = <GIC_PPI 9
 			(GIC_CPU_MASK_SIMPLE(4) | IRQ_TYPE_LEVEL_HIGH)>;
+	};
+
+	interrupt-controller@60004000 {
+		compatible = "nvidia,tegra124-ictlr", "nvidia,tegra30-ictlr";
+		interrupt-controller;
+		reg = <0x0 0x60004000 0x0 0x40>, /* primary controller */
+		      <0x0 0x60004100 0x0 0x40>, /* secondary controller */
+		      <0x0 0x60004200 0x0 0x40>, /* tertiary controller */
+		      <0x0 0x60004300 0x0 0x40>, /* quaternary controller */
+		      <0x0 0x60004400 0x0 0x40>; /* quinary controller */
 	};
 
 	timer@60005000 {
@@ -579,6 +590,56 @@
 		status = "disabled";
 	};
 
+	usb@0,70090000 {
+		compatible = "nvidia,tegra124-xhci";
+		reg = <0x0 0x70090000 0x0 0x8000>,
+		      <0x0 0x70098000 0x0 0x1000>,
+		      <0x0 0x70099000 0x0 0x1000>;
+		interrupts = <GIC_SPI 39 IRQ_TYPE_LEVEL_HIGH>;
+		clocks = <&tegra_car TEGRA124_CLK_XUSB_HOST>,
+			 <&tegra_car TEGRA124_CLK_XUSB_HOST_SRC>,
+			 <&tegra_car TEGRA124_CLK_XUSB_DEV>,
+			 <&tegra_car TEGRA124_CLK_XUSB_DEV_SRC>,
+			 <&tegra_car TEGRA124_CLK_XUSB_FALCON_SRC>,
+			 <&tegra_car TEGRA124_CLK_XUSB_SS>,
+			 <&tegra_car TEGRA124_CLK_XUSB_SS_DIV2>,
+			 <&tegra_car TEGRA124_CLK_XUSB_SS_SRC>,
+			 <&tegra_car TEGRA124_CLK_XUSB_HS_SRC>,
+			 <&tegra_car TEGRA124_CLK_XUSB_FS_SRC>,
+			 <&tegra_car TEGRA124_CLK_PLL_U_480M>,
+			 <&tegra_car TEGRA124_CLK_CLK_M>,
+			 <&tegra_car TEGRA124_CLK_PLL_E>;
+		clock-names = "xusb_host", "xusb_host_src", "xusb_dev",
+			      "xusb_dev_src", "xusb_falcon_src", "xusb_ss",
+			      "xusb_ss_div2", "xusb_ss_src", "xusb_hs_src",
+			      "xusb_fs_src", "pll_u_480m", "clk_m", "pll_e";
+		resets = <&tegra_car 89>, <&tegra_car 95>, <&tegra_car 156>,
+			 <&tegra_car 143>;
+		reset-names = "xusb_host", "xusb_dev", "xusb_ss", "xusb";
+		mboxes = <&xusb_mbox>;
+		mbox-names = "xusb";
+		status = "disabled";
+	};
+
+	xusb_mbox: mailbox@0,70098000 {
+		compatible = "nvidia,tegra124-xusb-mbox";
+		reg = <0x0 0x70098000 0x0 0x1000>;
+		interrupts = <GIC_SPI 40 IRQ_TYPE_LEVEL_HIGH>;
+
+		#mbox-cells = <0>;
+	};
+
+	padctl: padctl@0,7009f000 {
+		compatible = "nvidia,tegra124-xusb-padctl";
+		reg = <0x0 0x7009f000 0x0 0x1000>;
+		resets = <&tegra_car 142>;
+		reset-names = "padctl";
+		mboxes = <&xusb_mbox>;
+		mbox-names = "xusb";
+
+		#phy-cells = <1>;
+	};
+
 	sdhci@700b0600 {
 		compatible = "nvidia,tegra132-sdhci", "nvidia,tegra124-sdhci", "nvidia,tegra114-sdhci";
 		reg = <0x0 0x700b0600 0x0 0x200>;
@@ -729,75 +790,6 @@
 
 			thermal-sensors =
 				<&soctherm TEGRA124_SOCTHERM_SENSOR_CPU>;
-
-			trips {
-				dfll_floor_trip0: dfll_floor_trip0 {
-					temperature = <TEGRA132_DFLL_THERMAL_FLOOR_0>; /* millicelsius */
-					hysteresis = <1000>; /* millicelsius */
-					type = "active";
-				};
-				dfll_floor_trip1: dfll_floor_trip1 {
-					temperature = <TEGRA132_DFLL_THERMAL_FLOOR_1>; /* millicelsius */
-					hysteresis = <1000>; /* millicelsius */
-					type = "active";
-				};
-				dfll_floor_trip2: dfll_floor_trip2 {
-					temperature = <TEGRA132_DFLL_THERMAL_FLOOR_2>; /* millicelsius */
-					hysteresis = <1000>; /* millicelsius */
-					type = "active";
-				};
-				dfll_floor_trip3: dfll_floor_trip3 {
-					temperature = <TEGRA132_DFLL_THERMAL_FLOOR_3>; /* millicelsius */
-					hysteresis = <1000>; /* millicelsius */
-					type = "active";
-				};
-				dfll_cap_trip0: dfll_cap_trip0 {
-					temperature = <TEGRA132_DFLL_THERMAL_CAP_0>; /* millicelsius */
-					hysteresis = <1000>; /* millicelsius */
-					type = "active";
-				};
-				dfll_cap_trip1: dfll_cap_trip1 {
-					temperature = <TEGRA132_DFLL_THERMAL_CAP_1>; /* millicelsius */
-					hysteresis = <1000>; /* millicelsius */
-					type = "active";
-				};
-				dfll_cap_trip2: dfll_cap_trip2 {
-					temperature = <TEGRA132_DFLL_THERMAL_CAP_2>; /* millicelsius */
-					hysteresis = <1000>; /* millicelsius */
-					type = "active";
-				};
-			};
-
-			cooling-maps {
-				map0 {
-					trip = <&dfll_floor_trip0>;
-					cooling-device = <&dfll_floor 1 1>;
-				};
-				map1 {
-					trip = <&dfll_floor_trip1>;
-					cooling-device = <&dfll_floor 2 2>;
-				};
-				map2 {
-					trip = <&dfll_floor_trip2>;
-					cooling-device = <&dfll_floor 3 3>;
-				};
-				map3 {
-					trip = <&dfll_floor_trip3>;
-					cooling-device = <&dfll_floor 4 4>;
-				};
-				map5 {
-					trip = <&dfll_cap_trip0>;
-					cooling-device = <&dfll_cap 1 1>;
-				};
-				map6 {
-					trip = <&dfll_cap_trip1>;
-					cooling-device = <&dfll_cap 2 2>;
-				};
-				map7 {
-					trip = <&dfll_cap_trip2>;
-					cooling-device = <&dfll_cap 3 3>;
-				};
-			};
 		};
 
 		mem {
@@ -840,6 +832,13 @@
 		reset-names = "soctherm";
 
 		#thermal-sensor-cells = <1>;
+
+		throttle-cfgs {
+			heavy {
+				priority = <100>;
+				cpu-throt-level = <TEGRA_SOCTHERM_THROT_LEVEL_HIGH>;
+			};
+		};
 
 		hw-trips {
 			sensor-groups {
@@ -1031,6 +1030,7 @@
 				(GIC_CPU_MASK_SIMPLE(4) | IRQ_TYPE_LEVEL_LOW)>,
 			     <GIC_PPI 10
 				(GIC_CPU_MASK_SIMPLE(4) | IRQ_TYPE_LEVEL_LOW)>;
+		always-on;
 	};
 
 	dfll_cap: dfll_cdev_cap {
@@ -1045,5 +1045,11 @@
 		act-dev = <&dfll>;
 		cdev-type = "DFLL-floor";
 		#cooling-cells = <2>; /* min followed by max */
+	};
+
+	pmu {
+		compatible = "arm,armv8-pmuv3";
+		interrupts = <GIC_SPI 144 IRQ_TYPE_LEVEL_HIGH>,
+			     <GIC_SPI 145 IRQ_TYPE_LEVEL_HIGH>;
 	};
 };

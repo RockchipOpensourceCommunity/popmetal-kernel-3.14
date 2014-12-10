@@ -106,6 +106,8 @@ static int imx_ldb_connector_get_modes(struct drm_connector *connector)
 		struct drm_display_mode *mode;
 
 		mode = drm_mode_create(connector->dev);
+		if (!mode)
+			return -EINVAL;
 		drm_mode_copy(mode, &imx_ldb_ch->mode);
 		mode->type |= DRM_MODE_TYPE_DRIVER | DRM_MODE_TYPE_PREFERRED;
 		drm_mode_probed_add(connector, mode);
@@ -157,7 +159,9 @@ static void imx_ldb_set_clock(struct imx_ldb *ldb, int mux, int chno,
 	/* set display clock mux to LDB input clock */
 	ret = clk_set_parent(ldb->clk_sel[mux], ldb->clk[chno]);
 	if (ret)
-		dev_err(ldb->dev, "unable to set di%d parent clock to ldb_di%d\n", mux, chno);
+		dev_err(ldb->dev,
+			"unable to set di%d parent clock to ldb_di%d\n", mux,
+			chno);
 }
 
 static void imx_ldb_encoder_prepare(struct drm_encoder *encoder)
@@ -168,7 +172,7 @@ static void imx_ldb_encoder_prepare(struct drm_encoder *encoder)
 	u32 pixel_fmt;
 	unsigned long serial_clk;
 	unsigned long di_clk = mode->clock * 1000;
-	int mux = imx_drm_encoder_get_mux_id(encoder);
+	int mux = imx_drm_encoder_get_mux_id(imx_ldb_ch->child, encoder);
 
 	if (ldb->ldb_ctrl & LDB_SPLIT_MODE_EN) {
 		/* dual channel LVDS mode */
@@ -177,7 +181,8 @@ static void imx_ldb_encoder_prepare(struct drm_encoder *encoder)
 		imx_ldb_set_clock(ldb, mux, 1, serial_clk, di_clk);
 	} else {
 		serial_clk = 7000UL * mode->clock;
-		imx_ldb_set_clock(ldb, mux, imx_ldb_ch->chno, serial_clk, di_clk);
+		imx_ldb_set_clock(ldb, mux, imx_ldb_ch->chno, serial_clk,
+				di_clk);
 	}
 
 	switch (imx_ldb_ch->chno) {
@@ -203,7 +208,7 @@ static void imx_ldb_encoder_commit(struct drm_encoder *encoder)
 	struct imx_ldb_channel *imx_ldb_ch = enc_to_imx_ldb_ch(encoder);
 	struct imx_ldb *ldb = imx_ldb_ch->ldb;
 	int dual = ldb->ldb_ctrl & LDB_SPLIT_MODE_EN;
-	int mux = imx_drm_encoder_get_mux_id(encoder);
+	int mux = imx_drm_encoder_get_mux_id(imx_ldb_ch->child, encoder);
 
 	if (dual) {
 		clk_prepare_enable(ldb->clk[0]);
@@ -312,7 +317,6 @@ static struct drm_connector_funcs imx_ldb_connector_funcs = {
 static struct drm_connector_helper_funcs imx_ldb_connector_helper_funcs = {
 	.get_modes = imx_ldb_connector_get_modes,
 	.best_encoder = imx_ldb_connector_best_encoder,
-	.mode_valid = imx_drm_connector_mode_valid,
 };
 
 static struct drm_encoder_funcs imx_ldb_encoder_funcs = {
@@ -332,12 +336,12 @@ static int imx_ldb_get_clk(struct imx_ldb *ldb, int chno)
 {
 	char clkname[16];
 
-	sprintf(clkname, "di%d", chno);
+	snprintf(clkname, sizeof(clkname), "di%d", chno);
 	ldb->clk[chno] = devm_clk_get(ldb->dev, clkname);
 	if (IS_ERR(ldb->clk[chno]))
 		return PTR_ERR(ldb->clk[chno]);
 
-	sprintf(clkname, "di%d_pll", chno);
+	snprintf(clkname, sizeof(clkname), "di%d_pll", chno);
 	ldb->clk_pll[chno] = devm_clk_get(ldb->dev, clkname);
 
 	return PTR_ERR_OR_ZERO(ldb->clk_pll[chno]);
@@ -527,9 +531,11 @@ static int imx_ldb_bind(struct device *dev, struct device *master, void *data)
 		case LVDS_BIT_MAP_SPWG:
 			if (datawidth == 24) {
 				if (i == 0 || dual)
-					imx_ldb->ldb_ctrl |= LDB_DATA_WIDTH_CH0_24;
+					imx_ldb->ldb_ctrl |=
+						LDB_DATA_WIDTH_CH0_24;
 				if (i == 1 || dual)
-					imx_ldb->ldb_ctrl |= LDB_DATA_WIDTH_CH1_24;
+					imx_ldb->ldb_ctrl |=
+						LDB_DATA_WIDTH_CH1_24;
 			}
 			break;
 		case LVDS_BIT_MAP_JEIDA:
@@ -538,9 +544,11 @@ static int imx_ldb_bind(struct device *dev, struct device *master, void *data)
 				return -EINVAL;
 			}
 			if (i == 0 || dual)
-				imx_ldb->ldb_ctrl |= LDB_DATA_WIDTH_CH0_24 | LDB_BIT_MAP_CH0_JEIDA;
+				imx_ldb->ldb_ctrl |= LDB_DATA_WIDTH_CH0_24 |
+					LDB_BIT_MAP_CH0_JEIDA;
 			if (i == 1 || dual)
-				imx_ldb->ldb_ctrl |= LDB_DATA_WIDTH_CH1_24 | LDB_BIT_MAP_CH1_JEIDA;
+				imx_ldb->ldb_ctrl |= LDB_DATA_WIDTH_CH1_24 |
+					LDB_BIT_MAP_CH1_JEIDA;
 			break;
 		default:
 			dev_err(dev, "data mapping not specified or invalid\n");
@@ -565,6 +573,9 @@ static void imx_ldb_unbind(struct device *dev, struct device *master,
 
 	for (i = 0; i < 2; i++) {
 		struct imx_ldb_channel *channel = &imx_ldb->channel[i];
+
+		if (!channel->connector.funcs)
+			continue;
 
 		channel->connector.funcs->destroy(&channel->connector);
 		channel->encoder.funcs->destroy(&channel->encoder);

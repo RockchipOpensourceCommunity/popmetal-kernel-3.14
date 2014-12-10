@@ -22,6 +22,8 @@
 #include <linux/if_ether.h>
 #include <linux/types.h>
 #include <linux/pci.h>
+#include <linux/uuid.h>
+#include <linux/time.h>
 
 #include "htt.h"
 #include "htc.h"
@@ -61,6 +63,20 @@
 
 struct ath10k;
 
+enum ath10k_bus {
+	ATH10K_BUS_PCI,
+};
+
+static inline const char *ath10k_bus_str(enum ath10k_bus bus)
+{
+	switch (bus) {
+	case ATH10K_BUS_PCI:
+		return "pci";
+	}
+
+	return "unknown";
+}
+
 struct ath10k_skb_cb {
 	dma_addr_t paddr;
 	u8 vdev_id;
@@ -94,8 +110,6 @@ struct ath10k_bmi {
 	bool done_sent;
 };
 
-#define ATH10K_MAX_MEM_REQS 16
-
 struct ath10k_mem_chunk {
 	void *vaddr;
 	dma_addr_t paddr;
@@ -113,17 +127,21 @@ struct ath10k_wmi {
 	struct wmi_pdev_param_map *pdev_param;
 
 	u32 num_mem_chunks;
-	struct ath10k_mem_chunk mem_chunks[ATH10K_MAX_MEM_REQS];
+	struct ath10k_mem_chunk mem_chunks[WMI_MAX_MEM_REQS];
 };
 
-struct ath10k_peer_stat {
+struct ath10k_fw_stats_peer {
+	struct list_head list;
+
 	u8 peer_macaddr[ETH_ALEN];
 	u32 peer_rssi;
 	u32 peer_tx_rate;
 	u32 peer_rx_rate; /* 10x only */
 };
 
-struct ath10k_target_stats {
+struct ath10k_fw_stats_pdev {
+	struct list_head list;
+
 	/* PDEV stats */
 	s32 ch_noise_floor;
 	u32 tx_frame_count;
@@ -178,15 +196,11 @@ struct ath10k_target_stats {
 	s32 phy_errs;
 	s32 phy_err_drop;
 	s32 mpdu_errs;
+};
 
-	/* VDEV STATS */
-
-	/* PEER STATS */
-	u8 peers;
-	struct ath10k_peer_stat peer_stat[TARGET_NUM_PEERS];
-
-	/* TODO: Beacon filter stats */
-
+struct ath10k_fw_stats {
+	struct list_head pdevs;
+	struct list_head peers;
 };
 
 struct ath10k_dfs_stats {
@@ -232,6 +246,8 @@ struct ath10k_vif {
 	struct sk_buff *beacon;
 	/* protected by data_lock */
 	bool beacon_sent;
+	void *beacon_buf;
+	dma_addr_t beacon_paddr;
 
 	struct ath10k *ar;
 	struct ieee80211_vif *vif;
@@ -271,6 +287,7 @@ struct ath10k_vif {
 	u8 force_sgi;
 	bool use_cts_prot;
 	int num_legacy_stations;
+	int txpower;
 };
 
 struct ath10k_vif_iter {
@@ -278,23 +295,36 @@ struct ath10k_vif_iter {
 	struct ath10k_vif *arvif;
 };
 
+/* used for crash-dump storage, protected by data-lock */
+struct ath10k_fw_crash_data {
+	bool crashed_since_read;
+
+	uuid_le uuid;
+	struct timespec timestamp;
+	__le32 registers[REG_DUMP_COUNT_QCA988X];
+};
+
 struct ath10k_debug {
 	struct dentry *debugfs_phy;
 
-	struct ath10k_target_stats target_stats;
-	DECLARE_BITMAP(wmi_service_bitmap, WMI_SERVICE_BM_SIZE);
-
-	struct completion event_stats_compl;
+	struct ath10k_fw_stats fw_stats;
+	struct completion fw_stats_complete;
+	bool fw_stats_done;
+	DECLARE_BITMAP(wmi_service_bitmap, WMI_SERVICE_MAX);
 
 	unsigned long htt_stats_mask;
 	struct delayed_work htt_stats_dwork;
 	struct ath10k_dfs_stats dfs_stats;
 	struct ath_dfs_pool_stats dfs_pool_stats;
 
+	/* protected by conf_mutex */
 	u32 fw_dbglog_mask;
+	u32 pktlog_filter;
 
 	u8 htt_max_amsdu;
 	u8 htt_max_ampdu;
+
+	struct ath10k_fw_crash_data *fw_crash_data;
 };
 
 enum ath10k_state {
@@ -317,6 +347,17 @@ enum ath10k_state {
 	 * prevents completion timeouts and makes the driver more responsive to
 	 * userspace commands. This is also prevents recursive recovery. */
 	ATH10K_STATE_WEDGED,
+
+	/* factory tests */
+	ATH10K_STATE_UTF,
+};
+
+enum ath10k_firmware_mode {
+	/* the default mode, standard 802.11 functionality */
+	ATH10K_FIRMWARE_MODE_NORMAL,
+
+	/* factory tests etc */
+	ATH10K_FIRMWARE_MODE_UTF,
 };
 
 enum ath10k_fw_features {
@@ -344,9 +385,33 @@ enum ath10k_fw_features {
 enum ath10k_dev_flags {
 	/* Indicates that ath10k device is during CAC phase of DFS */
 	ATH10K_CAC_RUNNING,
-	ATH10K_FLAG_FIRST_BOOT_DONE,
 	ATH10K_FLAG_CORE_REGISTERED,
+
+	/* Device has crashed and needs to restart. This indicates any pending
+	 * waiters should immediately cancel instead of waiting for a time out.
+	 */
+	ATH10K_FLAG_CRASH_FLUSH,
 };
+
+enum ath10k_cal_mode {
+	ATH10K_CAL_MODE_FILE,
+	ATH10K_CAL_MODE_OTP,
+	ATH10K_CAL_MODE_DT,
+};
+
+static inline const char *ath10k_cal_mode_str(enum ath10k_cal_mode mode)
+{
+	switch (mode) {
+	case ATH10K_CAL_MODE_FILE:
+		return "file";
+	case ATH10K_CAL_MODE_OTP:
+		return "otp";
+	case ATH10K_CAL_MODE_DT:
+		return "dt";
+	}
+
+	return "unknown";
+}
 
 enum ath10k_scan_state {
 	ATH10K_SCAN_IDLE,
@@ -398,6 +463,7 @@ struct ath10k {
 	bool p2p;
 
 	struct {
+		enum ath10k_bus bus;
 		const struct ath10k_hif_ops *ops;
 	} hif;
 
@@ -433,7 +499,10 @@ struct ath10k {
 	const void *firmware_data;
 	size_t firmware_len;
 
+	const struct firmware *cal_file;
+
 	int fw_api;
+	enum ath10k_cal_mode cal_mode;
 
 	struct {
 		struct completion started;
@@ -459,8 +528,7 @@ struct ath10k {
 	/* current operating channel definition */
 	struct cfg80211_chan_def chandef;
 
-	int free_vdev_map;
-	bool promisc;
+	unsigned long long free_vdev_map;
 	bool monitor;
 	int monitor_vdev_id;
 	bool monitor_started;
@@ -532,15 +600,32 @@ struct ath10k {
 		struct ath10k_spec_scan config;
 	} spectral;
 
+	struct {
+		/* protected by conf_mutex */
+		const struct firmware *utf;
+		DECLARE_BITMAP(orig_fw_features, ATH10K_FW_FEATURE_COUNT);
+
+		/* protected by data_lock */
+		bool utf_monitor;
+	} testmode;
+
+	struct {
+		/* protected by data_lock */
+		u32 fw_crash_counter;
+		u32 fw_warm_reset_counter;
+		u32 fw_cold_reset_counter;
+	} stats;
+
 	/* must be last */
 	u8 drv_priv[0] __aligned(sizeof(void *));
 };
 
 struct ath10k *ath10k_core_create(size_t priv_size, struct device *dev,
+				  enum ath10k_bus bus,
 				  const struct ath10k_hif_ops *hif_ops);
 void ath10k_core_destroy(struct ath10k *ar);
 
-int ath10k_core_start(struct ath10k *ar);
+int ath10k_core_start(struct ath10k *ar, enum ath10k_firmware_mode mode);
 int ath10k_wait_for_suspend(struct ath10k *ar, u32 suspend_opt);
 void ath10k_core_stop(struct ath10k *ar);
 int ath10k_core_register(struct ath10k *ar, u32 chip_id);

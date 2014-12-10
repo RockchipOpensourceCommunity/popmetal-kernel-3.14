@@ -15,6 +15,17 @@
 
 	aliases {
 		mdio-gpio0 = &mdio0;
+		spi5 = &spi5; /* flashrom requires this bus to be the lowest */
+		spi6 = &spi6;
+	};
+
+	firmware {
+		chromeos {
+			pinctrl-0 = <&fw_pins>;
+			pinctrl-names = "default";
+			write-protect-gpio = <&qcom_pinmux 17 1>;
+			recovery-switch = <&qcom_pinmux 16 1>;
+		};
 	};
 
 	soc {
@@ -113,6 +124,55 @@
 					drive-strength = <12>;
 				};
 			};
+
+			leds_pins: led_pinmux {
+				mux {
+					pins = "gpio7", "gpio9";
+					drive-strength = <2>;
+					bias-none;
+					output-high;
+				};
+			};
+
+			switch_reset: switch_reset {
+				rst {
+					pins = "gpio26";
+					output-low;
+				};
+			};
+
+			fw_pins: fw_pinmux {
+				wp {
+					pins = "gpio17";
+					output-low;
+				};
+				recovery {
+					pins = "gpio16";
+					bias-none;
+				};
+			};
+
+			spi6_pins: spi6_pins {
+				mux {
+					pins = "gpio55", "gpio56", "gpio58";
+					function = "gsbi6_b";
+					bias-pull-down;
+				};
+				data {
+					pins = "gpio55", "gpio56";
+					drive-strength = <10>;
+				};
+				cs {
+					pins = "gpio57";
+					drive-strength = <10>;
+					bias-pull-up;
+					output-high;
+				};
+				clk {
+					pins = "gpio58";
+					drive-strength = <12>;
+				};
+			};
 		};
 
 		gsbi1: gsbi@12440000 {
@@ -156,7 +216,7 @@
 			qcom,mode = <GSBI_PROT_SPI>;
 			status = "ok";
 
-			spi4: spi@1a280000 {
+			spi5: spi@1a280000 {
 				status = "ok";
 				spi-max-frequency = <50000000>;
 
@@ -173,6 +233,31 @@
 					compatible = "spidev";
 					reg = <0>;
 					spi-max-frequency = <50000000>;
+				};
+			};
+		};
+
+		gsbi6: gsbi@16500000 {
+			qcom,mode = <GSBI_PROT_SPI>;
+			status = "ok";
+
+			spi6: spi@16580000 {
+				status = "ok";
+				spi-max-frequency = <25000000>;
+
+				pinctrl-0 = <&spi6_pins>;
+				pinctrl-names = "default";
+
+				cs-gpios = <&qcom_pinmux 57 0>;
+
+				dmas = <&adm_dma 8 0xb>,
+					<&adm_dma 7 0x14>;
+				dma-names = "rx", "tx";
+
+				spidev@0 {
+					compatible = "spidev";
+					reg = <0>;
+					spi-max-frequency = <25000000>;
 				};
 			};
 		};
@@ -255,6 +340,23 @@
 			status = "ok";
 		};
 
+		gpio-leds {
+			compatible = "gpio-leds";
+			pinctrl-0 = <&leds_pins>;
+
+			led1 {
+				gpios = <&qcom_pinmux 7 0>;
+				label = "LED1";
+				default-state = "off";
+			};
+
+			statusfail {
+				gpios = <&qcom_pinmux 9 0>;
+				label = "STATUS_FAIL";
+				default-state = "off";
+			};
+		};
+
 		amba {
 			/* eMMC */
 			sdcc1: sdcc@12400000 {
@@ -274,6 +376,8 @@
 			#address-cells = <1>;
 			#size-cells = <0>;
 			gpios = <&qcom_pinmux 1 0 &qcom_pinmux 0 0>;
+			pinctrl-0 = <&switch_reset>;
+			pinctrl-names = "default";
 
 			phy4: ethernet-phy@0 {
 				device_type = "ethernet-phy";
@@ -354,7 +458,12 @@
 			device-type = "network";
 			compatible = "qca8337-lite";
 			mdiobus = <&mdio0>;
+			qca,vlan-portmap = <
+				0x1     0x4e            /* VLAN1 Ports 1/6 */
+				0x2     0x21            /* VLAN2 Ports 0/2 */
+			>;
 		};
+
 		watchdog@208a038 {
 			compatible = "qcom,kpss-wdt-ipq8064";
 			reg = <0x0208a038 0x40>;

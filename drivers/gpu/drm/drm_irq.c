@@ -168,33 +168,34 @@ static void vblank_disable_and_save(struct drm_device *dev, int crtc)
 
 static void vblank_disable_fn(unsigned long arg)
 {
-	struct drm_device *dev = (struct drm_device *)arg;
+	struct drm_vblank_crtc *vblank = (void *)arg;
+	struct drm_device *dev = vblank->dev;
 	unsigned long irqflags;
-	int i;
+	int crtc = vblank->crtc;
 
 	if (!dev->vblank_disable_allowed)
 		return;
 
-	for (i = 0; i < dev->num_crtcs; i++) {
-		spin_lock_irqsave(&dev->vbl_lock, irqflags);
-		if (atomic_read(&dev->vblank[i].refcount) == 0 &&
-		    dev->vblank[i].enabled) {
-			DRM_DEBUG("disabling vblank on crtc %d\n", i);
-			vblank_disable_and_save(dev, i);
-		}
-		spin_unlock_irqrestore(&dev->vbl_lock, irqflags);
+	spin_lock_irqsave(&dev->vbl_lock, irqflags);
+	if (atomic_read(&vblank->refcount) == 0 && vblank->enabled) {
+		DRM_DEBUG("disabling vblank on crtc %d\n", crtc);
+		vblank_disable_and_save(dev, crtc);
 	}
+	spin_unlock_irqrestore(&dev->vbl_lock, irqflags);
 }
 
 void drm_vblank_cleanup(struct drm_device *dev)
 {
+	int crtc;
+
 	/* Bail if the driver didn't call drm_vblank_init() */
 	if (dev->num_crtcs == 0)
 		return;
 
-	del_timer_sync(&dev->vblank_disable_timer);
-
-	vblank_disable_fn((unsigned long)dev);
+	for (crtc = 0; crtc < dev->num_crtcs; crtc++) {
+		del_timer_sync(&dev->vblank[crtc].disable_timer);
+		vblank_disable_fn((unsigned long)&dev->vblank[crtc]);
+	}
 
 	kfree(dev->vblank);
 
@@ -206,8 +207,6 @@ int drm_vblank_init(struct drm_device *dev, int num_crtcs)
 {
 	int i, ret = -ENOMEM;
 
-	setup_timer(&dev->vblank_disable_timer, vblank_disable_fn,
-		    (unsigned long)dev);
 	spin_lock_init(&dev->vbl_lock);
 	spin_lock_init(&dev->vblank_time_lock);
 
@@ -217,8 +216,13 @@ int drm_vblank_init(struct drm_device *dev, int num_crtcs)
 	if (!dev->vblank)
 		goto err;
 
-	for (i = 0; i < num_crtcs; i++)
+	for (i = 0; i < num_crtcs; i++) {
+		dev->vblank[i].dev = dev;
+		dev->vblank[i].crtc = i;
 		init_waitqueue_head(&dev->vblank[i].queue);
+		setup_timer(&dev->vblank[i].disable_timer, vblank_disable_fn,
+			    (unsigned long)&dev->vblank[i]);
+	}
 
 	DRM_INFO("Supports vblank timestamp caching Rev 2 (21.10.2013).\n");
 
@@ -871,6 +875,41 @@ static void drm_update_vblank_count(struct drm_device *dev, int crtc)
 }
 
 /**
+ * drm_vblank_enable - enable the vblank interrupt on a CRTC
+ * @dev: DRM device
+ * @crtc: CRTC in question
+ */
+static int drm_vblank_enable(struct drm_device *dev, int crtc)
+{
+	int ret = 0;
+
+	assert_spin_locked(&dev->vbl_lock);
+
+	spin_lock(&dev->vblank_time_lock);
+
+	if (!dev->vblank[crtc].enabled) {
+		/* Enable vblank irqs under vblank_time_lock protection.
+		 * All vblank count & timestamp updates are held off
+		 * until we are done reinitializing master counter and
+		 * timestamps. Filtercode in drm_handle_vblank() will
+		 * prevent double-accounting of same vblank interval.
+		 */
+		ret = dev->driver->enable_vblank(dev, crtc);
+		DRM_DEBUG("enabling vblank on crtc %d, ret: %d\n", crtc, ret);
+		if (ret)
+			atomic_dec(&dev->vblank[crtc].refcount);
+		else {
+			dev->vblank[crtc].enabled = true;
+			drm_update_vblank_count(dev, crtc);
+		}
+	}
+
+	spin_unlock(&dev->vblank_time_lock);
+
+	return ret;
+}
+
+/**
  * drm_vblank_get - get a reference count on vblank events
  * @dev: DRM device
  * @crtc: which CRTC to own
@@ -883,31 +922,13 @@ static void drm_update_vblank_count(struct drm_device *dev, int crtc)
  */
 int drm_vblank_get(struct drm_device *dev, int crtc)
 {
-	unsigned long irqflags, irqflags2;
+	unsigned long irqflags;
 	int ret = 0;
 
 	spin_lock_irqsave(&dev->vbl_lock, irqflags);
 	/* Going from 0->1 means we have to enable interrupts again */
 	if (atomic_add_return(1, &dev->vblank[crtc].refcount) == 1) {
-		spin_lock_irqsave(&dev->vblank_time_lock, irqflags2);
-		if (!dev->vblank[crtc].enabled) {
-			/* Enable vblank irqs under vblank_time_lock protection.
-			 * All vblank count & timestamp updates are held off
-			 * until we are done reinitializing master counter and
-			 * timestamps. Filtercode in drm_handle_vblank() will
-			 * prevent double-accounting of same vblank interval.
-			 */
-			ret = dev->driver->enable_vblank(dev, crtc);
-			DRM_DEBUG("enabling vblank on crtc %d, ret: %d\n",
-				  crtc, ret);
-			if (ret)
-				atomic_dec(&dev->vblank[crtc].refcount);
-			else {
-				dev->vblank[crtc].enabled = true;
-				drm_update_vblank_count(dev, crtc);
-			}
-		}
-		spin_unlock_irqrestore(&dev->vblank_time_lock, irqflags2);
+		ret = drm_vblank_enable(dev, crtc);
 	} else {
 		if (!dev->vblank[crtc].enabled) {
 			atomic_dec(&dev->vblank[crtc].refcount);
@@ -935,7 +956,7 @@ void drm_vblank_put(struct drm_device *dev, int crtc)
 	/* Last user schedules interrupt disable */
 	if (atomic_dec_and_test(&dev->vblank[crtc].refcount) &&
 	    (drm_vblank_offdelay > 0))
-		mod_timer(&dev->vblank_disable_timer,
+		mod_timer(&dev->vblank[crtc].disable_timer,
 			  jiffies + ((drm_vblank_offdelay * HZ)/1000));
 }
 EXPORT_SYMBOL(drm_vblank_put);
@@ -944,8 +965,6 @@ EXPORT_SYMBOL(drm_vblank_put);
  * drm_vblank_off - disable vblank events on a CRTC
  * @dev: DRM device
  * @crtc: CRTC in question
- *
- * Caller must hold event lock.
  */
 void drm_vblank_off(struct drm_device *dev, int crtc)
 {
@@ -977,6 +996,23 @@ void drm_vblank_off(struct drm_device *dev, int crtc)
 	spin_unlock_irqrestore(&dev->vbl_lock, irqflags);
 }
 EXPORT_SYMBOL(drm_vblank_off);
+
+/**
+ * drm_vblank_on - enable vblank events on a CRTC
+ * @dev: DRM device
+ * @crtc: CRTC in question
+ */
+void drm_vblank_on(struct drm_device *dev, int crtc)
+{
+	unsigned long irqflags;
+
+	spin_lock_irqsave(&dev->vbl_lock, irqflags);
+	/* re-enable interrupts if there's are users left */
+	if (atomic_read(&dev->vblank[crtc].refcount) != 0)
+		WARN_ON(drm_vblank_enable(dev, crtc));
+	spin_unlock_irqrestore(&dev->vbl_lock, irqflags);
+}
+EXPORT_SYMBOL(drm_vblank_on);
 
 /**
  * drm_vblank_pre_modeset - account for vblanks across mode sets
@@ -1223,6 +1259,7 @@ int drm_wait_vblank(struct drm_device *dev, void *data,
 	DRM_WAIT_ON(ret, dev->vblank[crtc].queue, 3 * HZ,
 		    (((drm_vblank_count(dev, crtc) -
 		       vblwait->request.sequence) <= (1 << 23)) ||
+		     !dev->vblank[crtc].enabled ||
 		     !dev->irq_enabled));
 
 	if (ret != -EINTR) {

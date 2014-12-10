@@ -5300,7 +5300,6 @@
 #define DDI_BUF_CTL_B				0x64100
 #define DDI_BUF_CTL(port) _PORT(port, DDI_BUF_CTL_A, DDI_BUF_CTL_B)
 #define  DDI_BUF_CTL_ENABLE			(1<<31)
-/* Haswell */
 #define  DDI_BUF_EMP_400MV_0DB_HSW		(0<<24)   /* Sel0 */
 #define  DDI_BUF_EMP_400MV_3_5DB_HSW		(1<<24)   /* Sel1 */
 #define  DDI_BUF_EMP_400MV_6DB_HSW		(2<<24)   /* Sel2 */
@@ -5310,16 +5309,6 @@
 #define  DDI_BUF_EMP_600MV_6DB_HSW		(6<<24)   /* Sel6 */
 #define  DDI_BUF_EMP_800MV_0DB_HSW		(7<<24)   /* Sel7 */
 #define  DDI_BUF_EMP_800MV_3_5DB_HSW		(8<<24)   /* Sel8 */
-/* Broadwell */
-#define  DDI_BUF_EMP_400MV_0DB_BDW		(0<<24)   /* Sel0 */
-#define  DDI_BUF_EMP_400MV_3_5DB_BDW		(1<<24)   /* Sel1 */
-#define  DDI_BUF_EMP_400MV_6DB_BDW		(2<<24)   /* Sel2 */
-#define  DDI_BUF_EMP_600MV_0DB_BDW		(3<<24)   /* Sel3 */
-#define  DDI_BUF_EMP_600MV_3_5DB_BDW		(4<<24)   /* Sel4 */
-#define  DDI_BUF_EMP_600MV_6DB_BDW		(5<<24)   /* Sel5 */
-#define  DDI_BUF_EMP_800MV_0DB_BDW		(6<<24)   /* Sel6 */
-#define  DDI_BUF_EMP_800MV_3_5DB_BDW		(7<<24)   /* Sel7 */
-#define  DDI_BUF_EMP_1200MV_0DB_BDW		(8<<24)   /* Sel8 */
 #define  DDI_BUF_EMP_MASK			(0xf<<24)
 #define  DDI_BUF_PORT_REVERSAL			(1<<16)
 #define  DDI_BUF_IS_IDLE			(1<<7)
@@ -5440,7 +5429,10 @@
 #define  LCPLL_CD_SOURCE_FCLK		(1<<21)
 #define  LCPLL_CD_SOURCE_FCLK_DONE	(1<<19)
 
-#define D_COMP				(MCHBAR_MIRROR_BASE_SNB + 0x5F0C)
+/* Please see hsw_read_dcomp() and hsw_write_dcomp() before using this register,
+ * since on HSW we can't write to it using I915_WRITE. */
+#define D_COMP_HSW			(MCHBAR_MIRROR_BASE_SNB + 0x5F0C)
+#define D_COMP_BDW			0x138144
 #define  D_COMP_RCOMP_IN_PROGRESS	(1<<9)
 #define  D_COMP_COMP_FORCE		(1<<8)
 #define  D_COMP_COMP_DISABLE		(1<<0)

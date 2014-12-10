@@ -563,7 +563,7 @@ void psb_intel_lvds_destroy(struct drm_connector *connector)
 
 	if (lvds_priv->ddc_bus)
 		psb_intel_i2c_destroy(lvds_priv->ddc_bus);
-	drm_sysfs_connector_remove(connector);
+	drm_connector_unregister(connector);
 	drm_connector_cleanup(connector);
 	kfree(connector);
 }
@@ -781,6 +781,7 @@ void psb_intel_lvds_init(struct drm_device *dev,
 	 * Attempt to get the fixed panel mode from DDC.  Assume that the
 	 * preferred mode is the right one.
 	 */
+	mutex_lock(&dev->mode_config.mutex);
 	psb_intel_ddc_get_modes(connector, &lvds_priv->ddc_bus->adapter);
 	list_for_each_entry(scan, &connector->probed_modes, head) {
 		if (scan->type & DRM_MODE_TYPE_PREFERRED) {
@@ -831,10 +832,12 @@ void psb_intel_lvds_init(struct drm_device *dev,
 	 * actually having one.
 	 */
 out:
-	drm_sysfs_connector_add(connector);
+	mutex_unlock(&dev->mode_config.mutex);
+	drm_connector_register(connector);
 	return;
 
 failed_find:
+	mutex_unlock(&dev->mode_config.mutex);
 	if (lvds_priv->ddc_bus)
 		psb_intel_i2c_destroy(lvds_priv->ddc_bus);
 failed_ddc:

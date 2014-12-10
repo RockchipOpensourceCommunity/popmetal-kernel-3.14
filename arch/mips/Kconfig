@@ -300,6 +300,32 @@ config MACH_LOONGSON1
 	  the ICT (Institute of Computing Technology) and the Chinese Academy
 	  of Sciences.
 
+config MACH_PISTACHIO
+	bool "IMG Pistachio SoC based boards"
+	select ARCH_REQUIRE_GPIOLIB
+	select BOOT_ELF32
+	select BOOT_RAW
+	select BUILTIN_DTB
+	select CEVT_R4K
+	select CLKSRC_MIPS_GIC
+	select COMMON_CLK
+	select CSRC_R4K
+	select DMA_MAYBE_COHERENT
+	select IRQ_CPU
+	select LIBFDT
+	select MIPS_CPU_SCACHE
+	select MIPS_GIC
+	select SYS_HAS_CPU_MIPS32_R2
+	select SYS_SUPPORTS_32BIT_KERNEL
+	select SYS_SUPPORTS_LITTLE_ENDIAN
+	select SYS_SUPPORTS_MIPS_CPS
+	select SYS_SUPPORTS_MULTITHREADING
+	select SYS_SUPPORTS_SMARTMIPS
+	select SYS_SUPPORTS_ZBOOT
+	select USE_OF
+	help
+	  This enables support for the IMG Pistachio SoC platform.
+
 config MIPS_MALTA
 	bool "MIPS Malta board"
 	select ARCH_MAY_HAVE_PC_FDC
@@ -307,12 +333,12 @@ config MIPS_MALTA
 	select BOOT_RAW
 	select CEVT_R4K
 	select CSRC_R4K
-	select CSRC_GIC
+	select CLKSRC_MIPS_GIC
 	select DMA_MAYBE_COHERENT
 	select GENERIC_ISA_DMA
 	select HAVE_PCSPKR_PLATFORM
 	select IRQ_CPU
-	select IRQ_GIC
+	select MIPS_GIC
 	select HW_HAS_PCI
 	select I8253
 	select I8259
@@ -344,14 +370,15 @@ config MIPS_SEAD3
 	bool "MIPS SEAD3 board"
 	select BOOT_ELF32
 	select BOOT_RAW
+	select BUILTIN_DTB
 	select CEVT_R4K
 	select CSRC_R4K
-	select CSRC_GIC
+	select CLKSRC_MIPS_GIC
 	select CPU_MIPSR2_IRQ_VI
 	select CPU_MIPSR2_IRQ_EI
 	select DMA_NONCOHERENT
 	select IRQ_CPU
-	select IRQ_GIC
+	select MIPS_GIC
 	select LIBFDT
 	select MIPS_MSC
 	select SYS_HAS_CPU_MIPS32_R1
@@ -871,10 +898,6 @@ config CEVT_GT641XX
 config CEVT_R4K
 	bool
 
-config CEVT_GIC
-	select MIPS_CM
-	bool
-
 config CEVT_SB1250
 	bool
 
@@ -888,10 +911,6 @@ config CSRC_IOASIC
 	bool
 
 config CSRC_R4K
-	bool
-
-config CSRC_GIC
-	select MIPS_CM
 	bool
 
 config CSRC_SB1250
@@ -939,6 +958,7 @@ config SYS_SUPPORTS_HOTPLUG_CPU
 
 config I8259
 	bool
+	select IRQ_DOMAIN
 
 config MIPS_BONITO64
 	bool
@@ -1019,6 +1039,7 @@ config MIPS_HUGE_TLB_SUPPORT
 
 config IRQ_CPU
 	bool
+	select IRQ_DOMAIN
 
 config IRQ_CPU_RM7K
 	bool
@@ -1033,10 +1054,6 @@ config IRQ_TXX9
 	bool
 
 config IRQ_GT641XX
-	bool
-
-config IRQ_GIC
-	select MIPS_CM
 	bool
 
 config PCI_GT64XXX_PCI0
@@ -1405,6 +1422,7 @@ config CPU_CAVIUM_OCTEON
 	select USB_EHCI_BIG_ENDIAN_MMIO
 	select SYS_HAS_DMA_OPS
 	select MIPS_L1_CACHE_SHIFT_7
+	select BUILTIN_DTB
 	help
 	  The Cavium Octeon processor is a highly integrated chip containing
 	  many ethernet hardware widgets for networking tasks. The processor
@@ -1810,15 +1828,6 @@ config FORCE_MAX_ZONEORDER
 
 	  The page size is not necessarily 4KB.  Keep this in mind
 	  when choosing a value for this option.
-
-config CEVT_GIC
-	bool "Use GIC global counter for clock events"
-	depends on IRQ_GIC && !(MIPS_SEAD3 || MIPS_MT_SMTC)
-	help
-	  Use the GIC global counter for the clock events. The R4K clock
-	  event driver is always present, so if the platform ends up not
-	  detecting a GIC, it will fall back to the R4K timer for the
-	  generation of clock events.
 
 config BOARD_SCACHE
 	bool
@@ -2436,6 +2445,9 @@ config USE_OF
 	select OF
 	select OF_EARLY_FLATTREE
 	select IRQ_DOMAIN
+
+config BUILTIN_DTB
+	bool
 
 endmenu
 

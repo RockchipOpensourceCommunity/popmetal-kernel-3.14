@@ -91,6 +91,8 @@ config DRM_DMA_SYNC
 
 source "drivers/gpu/drm/i2c/Kconfig"
 
+source "drivers/gpu/drm/bridge/Kconfig"
+
 config DRM_TDFX
 	tristate "3dfx Banshee/Voodoo3+"
 	depends on DRM && PCI
@@ -173,6 +175,14 @@ config DRM_SAVAGE
 	help
 	  Choose this option if you have a Savage3D/4/SuperSavage/Pro/Twister
 	  chipset. If M is selected the module will be called savage.
+
+config DRM_VGEM
+	tristate "Virtual GEM provider"
+	depends on DRM
+	help
+	  Choose this option to get a virtual graphics memory manager,
+	  as used by Mesa's software renderer for enhanced performance.
+	  If M is selected the module will be called vgem.
 
 source "drivers/gpu/drm/exynos/Kconfig"
 

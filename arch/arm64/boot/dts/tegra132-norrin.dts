@@ -1,6 +1,7 @@
 /dts-v1/;
 
 #include <dt-bindings/input/input.h>
+#include <dt-bindings/soc/tegra-pmc.h>
 #include "tegra132.dtsi"
 
 / {
@@ -497,7 +498,8 @@
 	};
 
 	rtc {
-		nvidia,pmc-wakeup = <&pmc 1 16 4>;
+		nvidia,pmc-wakeup = <&pmc
+			PMC_WAKE_TYPE_EVENT 16 PMC_TRIGGER_TYPE_HIGH>;
 	};
 
 	i2c@7000d000 {
@@ -511,7 +513,8 @@
 			interrupts = <GIC_SPI 86 IRQ_TYPE_NONE>;
 			interrupt-controller;
 			#interrupt-cells = <2>;
-			nvidia,pmc-wakeup = <&pmc 1 18 8>;
+			nvidia,pmc-wakeup = <&pmc
+				PMC_WAKE_TYPE_EVENT 18 PMC_TRIGGER_TYPE_LOW>;
 
 			gpio-controller;
 			#gpio-cells = <2>;
@@ -1750,6 +1753,20 @@
 		};
 	};
 
+	gpio-keys {
+		compatible = "gpio-keys";
+
+		power {
+			label = "Power";
+			gpios = <&gpio TEGRA_GPIO(Q, 0) GPIO_ACTIVE_LOW>;
+			linux,code = <KEY_POWER>;
+			debounce-interval = <10>;
+			gpio-key,wakeup;
+			nvidia,pmc-wakeup = <&pmc
+				PMC_WAKE_TYPE_GPIO 51 PMC_TRIGGER_TYPE_NONE>;
+		};
+	};
+
 	regulators {
 		compatible = "simple-bus";
 		#address-cells = <1>;
@@ -1803,6 +1820,79 @@
 			regulator-always-on;
 			regulator-boot-on;
 			vin-supply = <&vdd_5v0_sys>;
+		};
+	};
+
+	thermal-zones {
+		pllx {
+			trips {
+				dfll_floor_trip0: dfll_floor_trip0 {
+					temperature = <TEGRA132_DFLL_THERMAL_FLOOR_0>; /* millicelsius */
+					hysteresis = <1000>; /* millicelsius */
+					type = "active";
+				};
+				dfll_floor_trip1: dfll_floor_trip1 {
+					temperature = <TEGRA132_DFLL_THERMAL_FLOOR_1>; /* millicelsius */
+					hysteresis = <1000>; /* millicelsius */
+					type = "active";
+				};
+				dfll_floor_trip2: dfll_floor_trip2 {
+					temperature = <TEGRA132_DFLL_THERMAL_FLOOR_2>; /* millicelsius */
+					hysteresis = <1000>; /* millicelsius */
+					type = "active";
+				};
+				dfll_floor_trip3: dfll_floor_trip3 {
+					temperature = <TEGRA132_DFLL_THERMAL_FLOOR_3>; /* millicelsius */
+					hysteresis = <1000>; /* millicelsius */
+					type = "active";
+				};
+				dfll_cap_trip0: dfll_cap_trip0 {
+					temperature = <TEGRA132_DFLL_THERMAL_CAP_0>; /* millicelsius */
+					hysteresis = <1000>; /* millicelsius */
+					type = "active";
+				};
+				dfll_cap_trip1: dfll_cap_trip1 {
+					temperature = <TEGRA132_DFLL_THERMAL_CAP_1>; /* millicelsius */
+					hysteresis = <1000>; /* millicelsius */
+					type = "active";
+				};
+				dfll_cap_trip2: dfll_cap_trip2 {
+					temperature = <TEGRA132_DFLL_THERMAL_CAP_2>; /* millicelsius */
+					hysteresis = <1000>; /* millicelsius */
+					type = "active";
+				};
+			};
+
+			cooling-maps {
+				map0 {
+					trip = <&dfll_floor_trip0>;
+					cooling-device = <&dfll_floor 1 1>;
+				};
+				map1 {
+					trip = <&dfll_floor_trip1>;
+					cooling-device = <&dfll_floor 2 2>;
+				};
+				map2 {
+					trip = <&dfll_floor_trip2>;
+					cooling-device = <&dfll_floor 3 3>;
+				};
+				map3 {
+					trip = <&dfll_floor_trip3>;
+					cooling-device = <&dfll_floor 4 4>;
+				};
+				map5 {
+					trip = <&dfll_cap_trip0>;
+					cooling-device = <&dfll_cap 1 1>;
+				};
+				map6 {
+					trip = <&dfll_cap_trip1>;
+					cooling-device = <&dfll_cap 2 2>;
+				};
+				map7 {
+					trip = <&dfll_cap_trip2>;
+					cooling-device = <&dfll_cap 3 3>;
+				};
+			};
 		};
 	};
 };

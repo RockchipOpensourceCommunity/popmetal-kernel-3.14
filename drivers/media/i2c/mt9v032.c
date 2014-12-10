@@ -661,7 +661,7 @@ static int mt9v032_s_ctrl(struct v4l2_ctrl *ctrl)
 			break;
 
 		freq = mt9v032->pdata->link_freqs[mt9v032->link_freq->val];
-		mt9v032->pixel_rate->val64 = freq;
+		*mt9v032->pixel_rate->p_new.p_s64 = freq;
 		mt9v032->sysclk = freq;
 		break;
 
@@ -925,7 +925,7 @@ static int mt9v032_probe(struct i2c_client *client,
 
 	mt9v032->pixel_rate =
 		v4l2_ctrl_new_std(&mt9v032->ctrls, &mt9v032_ctrl_ops,
-				  V4L2_CID_PIXEL_RATE, 0, 0, 1, 0);
+				  V4L2_CID_PIXEL_RATE, 1, INT_MAX, 1, 1);
 
 	if (pdata && pdata->link_freqs) {
 		unsigned int def = 0;

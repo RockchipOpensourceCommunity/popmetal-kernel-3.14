@@ -16,6 +16,8 @@
 #include <dt-bindings/pinctrl/rockchip.h>
 #include <dt-bindings/clock/rk3288-cru.h>
 #include <dt-bindings/rkfb/rk_fb.h>
+#include <dt-bindings/power-domain/rk3288.h>
+#include <dt-bindings/thermal/thermal.h>
 #include "skeleton.dtsi"
 
 / {
@@ -59,8 +61,10 @@
 			reg = <0x500>;
 			operating-points = <
 				/* KHz    uV */
-				1608000 1350000
-				1512000 1300000
+				1800000 1400000
+				1704000 1350000
+				1608000 1300000
+				1512000 1250000
 				1416000 1200000
 				1200000 1100000
 				1008000 1050000
@@ -68,10 +72,10 @@
 				 696000  950000
 				 600000  900000
 				 408000  900000
-				 312000  900000
 				 216000  900000
 				 126000  900000
 			>;
+			#cooling-cells = <2>; /* min followed by max */
 			clock-latency = <40000>;
 			clocks = <&cru ARMCLK>;
 		};
@@ -366,6 +370,25 @@
 		status = "disabled";
 	};
 
+	thermal-zones {
+		#include "rk3288-thermal.dtsi"
+	};
+
+	tsadc: tsadc@ff280000 {
+		compatible = "rockchip,rk3288-tsadc";
+		reg = <0xff280000 0x100>;
+		interrupts = <GIC_SPI 37 IRQ_TYPE_LEVEL_HIGH>;
+		clocks = <&cru SCLK_TSADC>, <&cru PCLK_TSADC>;
+		clock-names = "tsadc", "apb_pclk";
+		resets = <&cru SRST_TSADC>;
+		reset-names = "tsadc-apb";
+		pinctrl-names = "otp_out";
+		pinctrl-0 = <&otp_out>;
+		#thermal-sensor-cells = <1>;
+		hw-shut-temp = <125000>;
+		status = "disabled";
+	};
+
 	usb_host0_ehci: usb@ff500000 {
 		compatible = "generic-ehci";
 		reg = <0xff500000 0x100>;
@@ -404,6 +427,18 @@
 		clocks = <&cru HCLK_HSIC>;
 		clock-names = "usbhost";
 		status = "disabled";
+	};
+
+	dmc: dmc@ff610000 {
+		compatible = "rockchip,rk3288-dmc";
+		reg = <0xff610000 0x3fc
+		       0xff620000 0x294
+		       0xff630000 0x3fc
+		       0xff640000 0x294>;
+		clocks = <&cru PCLK_DDRUPCTL0>, <&cru PCLK_PUBL0>,
+			 <&cru PCLK_DDRUPCTL1>, <&cru PCLK_PUBL1>;
+		clock-names = "pclk_ddrupctl0", "pclk_publ0",
+			      "pclk_ddrupctl1", "pclk_publ1";
 	};
 
 	i2c0: i2c@ff650000 {
@@ -492,9 +527,9 @@
 		};
 	};
 
-	pmu_intmem@ff720000 {
-		compatible = "mmio-sram";
-		reg = <0xff720000 0x4000>;
+	sram@ff720000 {
+		compatible = "rockchip,rk3288-pmu-sram", "mmio-sram";
+		reg = <0xff720000 0x1000>;
 	};
 
 	pmu: power-management@ff730000 {
@@ -584,7 +619,11 @@
 		reg = <0xff940000 0x10000>;
 		interrupts = <GIC_SPI 16 IRQ_TYPE_LEVEL_HIGH>;
 		clocks = <&cru ACLK_VOP1>, <&cru DCLK_VOP1>, <&cru HCLK_VOP1>;
-		clock-names = "aclk_lcdc", "dclk_lcdc", "hclk_lcdc";
+		clock-names = "aclk_vop", "dclk_vop", "hclk_vop";
+		resets = <&cru SRST_LCDC1_AXI>, <&cru SRST_LCDC1_AHB>, <&cru SRST_LCDC1_DCLK>;
+		reset-names = "axi", "ahb", "dclk";
+		iommus = <&vopl_mmu>;
+		power-domains = <&power RK3288_PD_VIO>;
 		status = "disabled";
 	};
 
@@ -723,13 +762,20 @@
 		clock-names = "aclk_gpu";
 		operating-points = <
 			/* KHz uV */
-			100000 800000
-			200000 850000
-			300000 950000
-			400000 1000000
-			600000 1150000
+			100000 950000
+			200000 950000
+			300000 1000000
+			400000 1100000
+			/* 500000 1200000 - See crosbug.com/p/33857 */
+			600000 1250000
 		>;
+		power-domains = <&power RK3288_PD_GPU>;
 		status = "disabled";
+	};
+
+	noc: syscon@ffac0000 {
+		compatible = "rockchip,rk3288-noc", "syscon";
+		reg = <0xffac0000 0x2000>;
 	};
 
 	gic: interrupt-controller@ffc01000 {
@@ -880,6 +926,24 @@
 
 		pcfg_pull_none: pcfg-pull-none {
 			bias-disable;
+		};
+
+		sleep {
+			global_pwroff: global-pwroff {
+				rockchip,pins = <0 0 RK_FUNC_1 &pcfg_pull_none>;
+			};
+
+			ddrio_pwroff: ddrio-pwroff {
+				rockchip,pins = <0 1 RK_FUNC_1 &pcfg_pull_none>;
+			};
+
+			ddr0_retention: ddr0-retention {
+				rockchip,pins = <0 2 RK_FUNC_1 &pcfg_pull_up>;
+			};
+
+			ddr1_retention: ddr1-retention {
+				rockchip,pins = <0 3 RK_FUNC_1 &pcfg_pull_up>;
+			};
 		};
 
 		i2c0 {
@@ -1185,6 +1249,12 @@
 			};
 		};
 
+		tsadc {
+			otp_out: otp-out {
+				rockchip,pins = <0 10 RK_FUNC_1 &pcfg_pull_none>;
+			};
+		};
+
 		pwm0 {
 			pwm0_pin: pwm0-pin {
 				rockchip,pins = <7 0 RK_FUNC_1 &pcfg_pull_none>;
@@ -1240,6 +1310,64 @@
 						<4 2 RK_FUNC_3 &pcfg_pull_none>, /*rx_err*/
 						<4 3 RK_FUNC_3 &pcfg_pull_none>; /*ref_clk*/
 			};
+		};
+	};
+
+	power: power-controller {
+		compatible = "rockchip,rk3288-power-controller";
+		#power-domain-cells = <1>;
+		rockchip,pmu = <&pmu>;
+		#address-cells = <1>;
+		#size-cells = <0>;
+
+		pd_gpu {
+			reg = <RK3288_PD_GPU>;
+			clocks = <&cru ACLK_GPU>;
+		};
+
+		pd_hevc {
+			reg = <RK3288_PD_HEVC>;
+			clocks = <&cru ACLK_HEVC>,
+				 <&cru SCLK_HEVC_CABAC>,
+				 <&cru SCLK_HEVC_CORE>,
+				 <&cru HCLK_HEVC>;
+		};
+
+		pd_vio {
+			reg = <RK3288_PD_VIO>;
+			clocks = <&cru ACLK_IEP>,
+				 <&cru ACLK_ISP>,
+				 <&cru ACLK_RGA>,
+				 <&cru ACLK_VIP>,
+				 <&cru ACLK_VOP0>,
+				 <&cru ACLK_VOP1>,
+				 <&cru DCLK_VOP0>,
+				 <&cru DCLK_VOP1>,
+				 <&cru HCLK_IEP>,
+				 <&cru HCLK_ISP>,
+				 <&cru HCLK_RGA>,
+				 <&cru HCLK_VIP>,
+				 <&cru HCLK_VOP0>,
+				 <&cru HCLK_VOP1>,
+				 <&cru PCLK_EDP_CTRL>,
+				 <&cru PCLK_HDMI_CTRL>,
+				 <&cru PCLK_LVDS_PHY>,
+				 <&cru PCLK_MIPI_CSI>,
+				 <&cru PCLK_MIPI_DSI0>,
+				 <&cru PCLK_MIPI_DSI1>,
+				 <&cru SCLK_EDP_24M>,
+				 <&cru SCLK_EDP>,
+				 <&cru SCLK_HDMI_CEC>,
+				 <&cru SCLK_HDMI_HDCP>,
+				 <&cru SCLK_ISP_JPE>,
+				 <&cru SCLK_ISP>,
+				 <&cru SCLK_RGA>;
+		};
+
+		pd_video {
+			reg = <RK3288_PD_VIDEO>;
+			clocks = <&cru ACLK_VCODEC>,
+				 <&cru HCLK_VCODEC>;
 		};
 	};
 };

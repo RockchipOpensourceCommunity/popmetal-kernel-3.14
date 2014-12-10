@@ -836,10 +836,11 @@ void intel_crt_init(struct drm_device *dev)
 		crt->base.get_hw_state = intel_crt_get_hw_state;
 	}
 	intel_connector->get_hw_state = intel_connector_get_hw_state;
+	intel_connector->unregister = intel_connector_unregister;
 
 	drm_connector_helper_add(connector, &intel_crt_connector_helper_funcs);
 
-	drm_sysfs_connector_add(connector);
+	drm_connector_register(connector);
 
 	intel_i2c_register(dev, connector, dev_priv->vbt.crt_ddc_pin);
 

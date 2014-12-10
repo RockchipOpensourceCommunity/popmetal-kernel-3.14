@@ -1876,6 +1876,7 @@ void intel_flush_primary_plane(struct drm_i915_private *dev_priv,
 static void intel_enable_primary_plane(struct drm_i915_private *dev_priv,
 				       enum plane plane, enum pipe pipe)
 {
+	struct drm_device *dev = dev_priv->dev;
 	struct intel_crtc *intel_crtc =
 		to_intel_crtc(dev_priv->pipe_to_crtc_mapping[pipe]);
 	int reg;
@@ -1895,6 +1896,14 @@ static void intel_enable_primary_plane(struct drm_i915_private *dev_priv,
 
 	I915_WRITE(reg, val | DISPLAY_PLANE_ENABLE);
 	intel_flush_primary_plane(dev_priv, plane);
+
+	/*
+	 * BDW signals flip done immediately if the plane
+	 * is disabled, even if the plane enable is already
+	 * armed to occur at the next vblank :(
+	 */
+	if (IS_BROADWELL(dev))
+		intel_wait_for_vblank(dev, intel_crtc->pipe);
 }
 
 /**
@@ -3622,6 +3631,7 @@ static void ironlake_crtc_enable(struct drm_crtc *crtc)
 	if (HAS_PCH_CPT(dev))
 		cpt_verify_modeset(dev, intel_crtc->pipe);
 
+	drm_vblank_on(dev, pipe);
 }
 
 /* IPS only exists on ULT machines and is tied to pipe A. */
@@ -3765,6 +3775,8 @@ static void haswell_crtc_enable(struct drm_crtc *crtc)
 	 * happening.
 	 */
 	intel_wait_for_vblank(dev, intel_crtc->pipe);
+
+	drm_vblank_on(dev, pipe);
 }
 
 static void ironlake_pfit_disable(struct intel_crtc *crtc)
@@ -4191,6 +4203,8 @@ static void valleyview_crtc_enable(struct drm_crtc *crtc)
 
 	for_each_encoder_on_crtc(dev, crtc, encoder)
 		encoder->enable(encoder);
+
+	drm_vblank_on(dev, pipe);
 }
 
 static void i9xx_crtc_enable(struct drm_crtc *crtc)
@@ -4235,6 +4249,8 @@ static void i9xx_crtc_enable(struct drm_crtc *crtc)
 
 	for_each_encoder_on_crtc(dev, crtc, encoder)
 		encoder->enable(encoder);
+
+	drm_vblank_on(dev, pipe);
 }
 
 static void i9xx_pfit_disable(struct intel_crtc *crtc)
@@ -6589,6 +6605,16 @@ static void assert_can_disable_lcpll(struct drm_i915_private *dev_priv)
 	WARN(!dev_priv->pc8.irqs_disabled, "IRQs enabled\n");
 }
 
+static uint32_t hsw_read_dcomp(struct drm_i915_private *dev_priv)
+{
+	struct drm_device *dev = dev_priv->dev;
+
+	if (IS_HASWELL(dev))
+		return I915_READ(D_COMP_HSW);
+	else
+		return I915_READ(D_COMP_BDW);
+}
+
 static void hsw_write_dcomp(struct drm_i915_private *dev_priv, uint32_t val)
 {
 	struct drm_device *dev = dev_priv->dev;
@@ -6600,9 +6626,9 @@ static void hsw_write_dcomp(struct drm_i915_private *dev_priv, uint32_t val)
 			DRM_ERROR("Failed to disable D_COMP\n");
 		mutex_unlock(&dev_priv->rps.hw_lock);
 	} else {
-		I915_WRITE(D_COMP, val);
+		I915_WRITE(D_COMP_BDW, val);
+		POSTING_READ(D_COMP_BDW);
 	}
-	POSTING_READ(D_COMP);
 }
 
 /*
@@ -6640,12 +6666,13 @@ static void hsw_disable_lcpll(struct drm_i915_private *dev_priv,
 	if (wait_for((I915_READ(LCPLL_CTL) & LCPLL_PLL_LOCK) == 0, 1))
 		DRM_ERROR("LCPLL still locked\n");
 
-	val = I915_READ(D_COMP);
+	val = hsw_read_dcomp(dev_priv);
 	val |= D_COMP_COMP_DISABLE;
 	hsw_write_dcomp(dev_priv, val);
 	ndelay(100);
 
-	if (wait_for((I915_READ(D_COMP) & D_COMP_RCOMP_IN_PROGRESS) == 0, 1))
+	if (wait_for((hsw_read_dcomp(dev_priv) & D_COMP_RCOMP_IN_PROGRESS) == 0,
+		     1))
 		DRM_ERROR("D_COMP RCOMP still in progress\n");
 
 	if (allow_power_down) {
@@ -6680,7 +6707,7 @@ static void hsw_restore_lcpll(struct drm_i915_private *dev_priv)
 		POSTING_READ(LCPLL_CTL);
 	}
 
-	val = I915_READ(D_COMP);
+	val = hsw_read_dcomp(dev_priv);
 	val |= D_COMP_COMP_FORCE;
 	val &= ~D_COMP_COMP_DISABLE;
 	hsw_write_dcomp(dev_priv, val);
@@ -11517,6 +11544,14 @@ void intel_modeset_gem_init(struct drm_device *dev)
 	mutex_unlock(&dev->mode_config.mutex);
 }
 
+void intel_connector_unregister(struct intel_connector *intel_connector)
+{
+	struct drm_connector *connector = &intel_connector->base;
+
+	intel_panel_destroy_backlight(connector);
+	drm_connector_unregister(connector);
+}
+
 void intel_modeset_cleanup(struct drm_device *dev)
 {
 	struct drm_i915_private *dev_priv = dev->dev_private;
@@ -11561,8 +11596,10 @@ void intel_modeset_cleanup(struct drm_device *dev)
 
 	/* destroy the backlight and sysfs files before encoders/connectors */
 	list_for_each_entry(connector, &dev->mode_config.connector_list, head) {
-		intel_panel_destroy_backlight(connector);
-		drm_sysfs_connector_remove(connector);
+		struct intel_connector *intel_connector;
+
+		intel_connector = to_intel_connector(connector);
+		intel_connector->unregister(intel_connector);
 	}
 
 	drm_mode_config_cleanup(dev);

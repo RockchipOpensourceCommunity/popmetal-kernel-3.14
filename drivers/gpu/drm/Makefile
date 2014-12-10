@@ -25,7 +25,7 @@ drm-$(CONFIG_OF) += drm_of.o
 
 drm-usb-y   := drm_usb.o
 
-drm_kms_helper-y := drm_crtc_helper.o drm_dp_helper.o
+drm_kms_helper-y := drm_crtc_helper.o drm_dp_helper.o drm_probe_helper.o
 drm_kms_helper-$(CONFIG_DRM_LOAD_EDID_FIRMWARE) += drm_edid_load.o
 drm_kms_helper-$(CONFIG_DRM_KMS_FB_HELPER) += drm_fb_helper.o
 drm_kms_helper-$(CONFIG_DRM_KMS_CMA_HELPER) += drm_fb_cma_helper.o
@@ -50,6 +50,7 @@ obj-$(CONFIG_DRM_SIS)   += sis/
 obj-$(CONFIG_DRM_SAVAGE)+= savage/
 obj-$(CONFIG_DRM_VMWGFX)+= vmwgfx/
 obj-$(CONFIG_DRM_VIA)	+=via/
+obj-$(CONFIG_DRM_VGEM)	+= vgem/
 obj-$(CONFIG_DRM_NOUVEAU) +=nouveau/
 obj-$(CONFIG_DRM_EXYNOS) +=exynos/
 obj-$(CONFIG_DRM_ROCKCHIP) +=rockchip/
@@ -67,3 +68,4 @@ obj-$(CONFIG_DRM_MSM) += msm/
 obj-$(CONFIG_DRM_TEGRA) += tegra/
 obj-y			+= i2c/
 obj-y			+= panel/
+obj-y			+= bridge/

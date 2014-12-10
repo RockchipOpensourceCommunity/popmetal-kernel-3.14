@@ -30,7 +30,7 @@
 #include <drm/drm_gem_cma_helper.h>
 #include <drm/drm_fb_cma_helper.h>
 
-#include "ipu-v3/imx-ipu-v3.h"
+#include <video/imx-ipu-v3.h>
 #include "imx-drm.h"
 #include "ipuv3-plane.h"
 
@@ -60,24 +60,32 @@ struct ipu_crtc {
 
 static void ipu_fb_enable(struct ipu_crtc *ipu_crtc)
 {
+	struct ipu_soc *ipu = dev_get_drvdata(ipu_crtc->dev->parent);
+
 	if (ipu_crtc->enabled)
 		return;
 
-	ipu_di_enable(ipu_crtc->di);
-	ipu_dc_enable_channel(ipu_crtc->dc);
+	ipu_dc_enable(ipu);
 	ipu_plane_enable(ipu_crtc->plane[0]);
+	/* Start DC channel and DI after IDMAC */
+	ipu_dc_enable_channel(ipu_crtc->dc);
+	ipu_di_enable(ipu_crtc->di);
 
 	ipu_crtc->enabled = 1;
 }
 
 static void ipu_fb_disable(struct ipu_crtc *ipu_crtc)
 {
+	struct ipu_soc *ipu = dev_get_drvdata(ipu_crtc->dev->parent);
+
 	if (!ipu_crtc->enabled)
 		return;
 
-	ipu_plane_disable(ipu_crtc->plane[0]);
+	/* Stop DC channel and DI before IDMAC */
 	ipu_dc_disable_channel(ipu_crtc->dc);
 	ipu_di_disable(ipu_crtc->di);
+	ipu_plane_disable(ipu_crtc->plane[0]);
+	ipu_dc_disable(ipu);
 
 	ipu_crtc->enabled = 0;
 }
@@ -158,7 +166,7 @@ static int ipu_crtc_mode_set(struct drm_crtc *crtc,
 		sig_cfg.Vsync_pol = 1;
 
 	sig_cfg.enable_pol = 1;
-	sig_cfg.clk_pol = 1;
+	sig_cfg.clk_pol = 0;
 	sig_cfg.width = mode->hdisplay;
 	sig_cfg.height = mode->vdisplay;
 	sig_cfg.pixel_fmt = out_pixel_fmt;
@@ -193,7 +201,8 @@ static int ipu_crtc_mode_set(struct drm_crtc *crtc,
 		return ret;
 	}
 
-	return ipu_plane_mode_set(ipu_crtc->plane[0], crtc, mode, crtc->primary->fb,
+	return ipu_plane_mode_set(ipu_crtc->plane[0], crtc, mode,
+				  crtc->primary->fb,
 				  0, 0, mode->hdisplay, mode->vdisplay,
 				  x, y, mode->hdisplay, mode->vdisplay);
 }
@@ -218,9 +227,11 @@ static irqreturn_t ipu_irq_handler(int irq, void *dev_id)
 	imx_drm_handle_vblank(ipu_crtc->imx_crtc);
 
 	if (ipu_crtc->newfb) {
+		struct ipu_plane *plane = ipu_crtc->plane[0];
+
 		ipu_crtc->newfb = NULL;
-		ipu_plane_set_base(ipu_crtc->plane[0], ipu_crtc->base.primary->fb,
-				ipu_crtc->plane[0]->x, ipu_crtc->plane[0]->y);
+		ipu_plane_set_base(plane, ipu_crtc->base.primary->fb,
+				   plane->x, plane->y);
 		ipu_crtc_handle_pageflip(ipu_crtc);
 	}
 
@@ -336,7 +347,7 @@ err_out:
 }
 
 static int ipu_crtc_init(struct ipu_crtc *ipu_crtc,
-		struct ipu_client_platformdata *pdata)
+	struct ipu_client_platformdata *pdata, struct drm_device *drm)
 {
 	struct ipu_soc *ipu = dev_get_drvdata(ipu_crtc->dev->parent);
 	int dp = -EINVAL;
@@ -350,10 +361,8 @@ static int ipu_crtc_init(struct ipu_crtc *ipu_crtc,
 		return ret;
 	}
 
-	ret = imx_drm_add_crtc(&ipu_crtc->base,
-			&ipu_crtc->imx_crtc,
-			&ipu_crtc_helper_funcs, THIS_MODULE,
-			ipu_crtc->dev->parent->of_node, pdata->di);
+	ret = imx_drm_add_crtc(drm, &ipu_crtc->base, &ipu_crtc->imx_crtc,
+			&ipu_crtc_helper_funcs, ipu_crtc->dev->of_node);
 	if (ret) {
 		dev_err(ipu_crtc->dev, "adding crtc failed with %d.\n", ret);
 		goto err_put_resources;
@@ -401,9 +410,32 @@ err_put_resources:
 	return ret;
 }
 
+static struct device_node *ipu_drm_get_port_by_id(struct device_node *parent,
+						  int port_id)
+{
+	struct device_node *port;
+	int id, ret;
+
+	port = of_get_child_by_name(parent, "port");
+	while (port) {
+		ret = of_property_read_u32(port, "reg", &id);
+		if (!ret && id == port_id)
+			return port;
+
+		do {
+			port = of_get_next_child(parent, port);
+			if (!port)
+				return NULL;
+		} while (of_node_cmp(port->name, "port"));
+	}
+
+	return NULL;
+}
+
 static int ipu_drm_bind(struct device *dev, struct device *master, void *data)
 {
 	struct ipu_client_platformdata *pdata = dev->platform_data;
+	struct drm_device *drm = data;
 	struct ipu_crtc *ipu_crtc;
 	int ret;
 
@@ -413,7 +445,7 @@ static int ipu_drm_bind(struct device *dev, struct device *master, void *data)
 
 	ipu_crtc->dev = dev;
 
-	ret = ipu_crtc_init(ipu_crtc, pdata);
+	ret = ipu_crtc_init(ipu_crtc, pdata, drm);
 	if (ret)
 		return ret;
 
@@ -440,16 +472,29 @@ static const struct component_ops ipu_crtc_ops = {
 
 static int ipu_drm_probe(struct platform_device *pdev)
 {
+	struct device *dev = &pdev->dev;
+	struct ipu_client_platformdata *pdata = dev->platform_data;
 	int ret;
 
-	if (!pdev->dev.platform_data)
+	if (!dev->platform_data)
 		return -EINVAL;
 
-	ret = dma_set_coherent_mask(&pdev->dev, DMA_BIT_MASK(32));
+	if (!dev->of_node) {
+		/* Associate crtc device with the corresponding DI port node */
+		dev->of_node = ipu_drm_get_port_by_id(dev->parent->of_node,
+						      pdata->di + 2);
+		if (!dev->of_node) {
+			dev_err(dev, "missing port@%d node in %s\n",
+				pdata->di + 2, dev->parent->of_node->full_name);
+			return -ENODEV;
+		}
+	}
+
+	ret = dma_set_coherent_mask(dev, DMA_BIT_MASK(32));
 	if (ret)
 		return ret;
 
-	return component_add(&pdev->dev, &ipu_crtc_ops);
+	return component_add(dev, &ipu_crtc_ops);
 }
 
 static int ipu_drm_remove(struct platform_device *pdev)

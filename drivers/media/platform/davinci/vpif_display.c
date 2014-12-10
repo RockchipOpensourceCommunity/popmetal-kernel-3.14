@@ -234,13 +234,7 @@ static int vpif_start_streaming(struct vb2_queue *vq, unsigned int count)
 	unsigned long flags;
 	int ret;
 
-	/* If buffer queue is empty, return error */
 	spin_lock_irqsave(&common->irqlock, flags);
-	if (list_empty(&common->dma_queue)) {
-		spin_unlock_irqrestore(&common->irqlock, flags);
-		vpif_err("buffer queue is empty\n");
-		return -ENOBUFS;
-	}
 
 	/* Get the next frame from the buffer queue */
 	common->next_frm = common->cur_frm =
@@ -314,7 +308,7 @@ static int vpif_start_streaming(struct vb2_queue *vq, unsigned int count)
 }
 
 /* abort streaming and wait for last buffer */
-static int vpif_stop_streaming(struct vb2_queue *vq)
+static void vpif_stop_streaming(struct vb2_queue *vq)
 {
 	struct vpif_fh *fh = vb2_get_drv_priv(vq);
 	struct channel_obj *ch = fh->channel;
@@ -322,7 +316,7 @@ static int vpif_stop_streaming(struct vb2_queue *vq)
 	unsigned long flags;
 
 	if (!vb2_is_streaming(vq))
-		return 0;
+		return;
 
 	common = &ch->common[VPIF_VIDEO_INDEX];
 
@@ -335,8 +329,6 @@ static int vpif_stop_streaming(struct vb2_queue *vq)
 		vb2_buffer_done(&common->next_frm->vb, VB2_BUF_STATE_ERROR);
 	}
 	spin_unlock_irqrestore(&common->irqlock, flags);
-
-	return 0;
 }
 
 static struct vb2_ops video_qops = {
@@ -983,7 +975,8 @@ static int vpif_reqbufs(struct file *file, void *priv,
 	q->ops = &video_qops;
 	q->mem_ops = &vb2_dma_contig_memops;
 	q->buf_struct_size = sizeof(struct vpif_disp_buffer);
-	q->timestamp_type = V4L2_BUF_FLAG_TIMESTAMP_MONOTONIC;
+	q->timestamp_flags = V4L2_BUF_FLAG_TIMESTAMP_MONOTONIC;
+	q->min_buffers_needed = 1;
 
 	ret = vb2_queue_init(q);
 	if (ret) {

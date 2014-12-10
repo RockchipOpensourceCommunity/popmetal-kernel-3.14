@@ -38,6 +38,8 @@
 #include <soc/tegra/fuse.h>
 #include <soc/tegra/iomap.h>
 #include <soc/tegra/pmc.h>
+#include <soc/tegra/reset.h>
+#include <soc/tegra/sleep.h>
 
 #include <asm/hardware/cache-l2x0.h>
 #include <asm/mach/arch.h>
@@ -50,9 +52,6 @@
 #include "common.h"
 #include "cpuidle.h"
 #include "irq.h"
-#include "pm.h"
-#include "reset.h"
-#include "sleep.h"
 
 /*
  * Storage for debug-macro.S's state.
@@ -162,7 +161,6 @@ static void __init tegra_dt_init_late(void)
 {
 	int i;
 
-	tegra_init_suspend();
 	tegra_cpuidle_init();
 
 	for (i = 0; i < ARRAY_SIZE(board_init_funcs); i++) {

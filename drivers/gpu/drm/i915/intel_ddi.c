@@ -76,12 +76,12 @@ static const u32 bdw_ddi_translations_edp[] = {
 	0x00FFFFFF, 0x00000012,		/* eDP parameters */
 	0x00EBAFFF, 0x00020011,
 	0x00C71FFF, 0x0006000F,
+	0x00AAAFFF, 0x000E000A,
 	0x00FFFFFF, 0x00020011,
 	0x00DB6FFF, 0x0005000F,
 	0x00BEEFFF, 0x000A000C,
 	0x00FFFFFF, 0x0005000F,
 	0x00DB6FFF, 0x000A000C,
-	0x00FFFFFF, 0x000A000C,
 	0x00FFFFFF, 0x00140006		/* HDMI parameters 800mV 0dB*/
 };
 
@@ -89,12 +89,12 @@ static const u32 bdw_ddi_translations_dp[] = {
 	0x00FFFFFF, 0x0007000E,		/* DP parameters */
 	0x00D75FFF, 0x000E000A,
 	0x00BEFFFF, 0x00140006,
+	0x80B2CFFF, 0x001B0002,
 	0x00FFFFFF, 0x000E000A,
-	0x00D75FFF, 0x00180004,
-	0x80CB2FFF, 0x001B0002,
+	0x00DB6FFF, 0x00160005,
+	0x80C71FFF, 0x001A0002,
 	0x00F7DFFF, 0x00180004,
 	0x80D75FFF, 0x001B0002,
-	0x80FFFFFF, 0x001B0002,
 	0x00FFFFFF, 0x00140006		/* HDMI parameters 800mV 0dB*/
 };
 
@@ -109,6 +109,20 @@ static const u32 bdw_ddi_translations_fdi[] = {
 	0x00FFFFFF, 0x00070006,
 	0x00D75FFF, 0x000C0000,
 	0x00FFFFFF, 0x00140006		/* HDMI parameters 800mV 0dB*/
+};
+
+static const u32 bdw_ddi_translations_hdmi[] = {
+				/* Idx	NT mV diff	T mV diff	db  */
+	0x00FFFFFF, 0x0007000E, /* 0:	400		400		0   */
+	0x00D75FFF, 0x000E000A, /* 1:	400		600		3.5 */
+	0x00BEFFFF, 0x00140006, /* 2:	400		800		6   */
+	0x00FFFFFF, 0x0009000D, /* 3:	450		450		0   */
+	0x00FFFFFF, 0x000E000A, /* 4:	600		600		0   */
+	0x00D7FFFF, 0x00140006, /* 5:	600		800		2.5 */
+	0x80CB2FFF, 0x001B0002, /* 6:	600		1000		4.5 */
+	0x00FFFFFF, 0x00140006, /* 7:	800		800		0   */
+	0x80E79FFF, 0x001B0002, /* 8:	800		1000		2   */
+	0x80FFFFFF, 0x001B0002, /* 9:	1000		1000		0   */
 };
 
 enum port intel_ddi_get_encoder_port(struct intel_encoder *intel_encoder)
@@ -142,26 +156,36 @@ static void intel_prepare_ddi_buffers(struct drm_device *dev, enum port port)
 {
 	struct drm_i915_private *dev_priv = dev->dev_private;
 	u32 reg;
-	int i;
+	int i, n_hdmi_entries, hdmi_800mV_0dB;
 	int hdmi_level = dev_priv->vbt.ddi_port_info[port].hdmi_level_shift;
 	const u32 *ddi_translations_fdi;
 	const u32 *ddi_translations_dp;
 	const u32 *ddi_translations_edp;
+	const u32 *ddi_translations_hdmi;
 	const u32 *ddi_translations;
 
 	if (IS_BROADWELL(dev)) {
 		ddi_translations_fdi = bdw_ddi_translations_fdi;
 		ddi_translations_dp = bdw_ddi_translations_dp;
 		ddi_translations_edp = bdw_ddi_translations_edp;
+		ddi_translations_hdmi = bdw_ddi_translations_hdmi;
+		n_hdmi_entries = ARRAY_SIZE(bdw_ddi_translations_hdmi);
+		hdmi_800mV_0dB = 7;
 	} else if (IS_HASWELL(dev)) {
 		ddi_translations_fdi = hsw_ddi_translations_fdi;
 		ddi_translations_dp = hsw_ddi_translations_dp;
 		ddi_translations_edp = hsw_ddi_translations_dp;
+		ddi_translations_hdmi = hsw_ddi_translations_hdmi;
+		n_hdmi_entries = ARRAY_SIZE(hsw_ddi_translations_hdmi);
+		hdmi_800mV_0dB = 6;
 	} else {
 		WARN(1, "ddi translation table missing\n");
 		ddi_translations_edp = bdw_ddi_translations_dp;
 		ddi_translations_fdi = bdw_ddi_translations_fdi;
 		ddi_translations_dp = bdw_ddi_translations_dp;
+		ddi_translations_hdmi = bdw_ddi_translations_hdmi;
+		n_hdmi_entries = ARRAY_SIZE(bdw_ddi_translations_hdmi);
+		hdmi_800mV_0dB = 7;
 	}
 
 	switch (port) {
@@ -190,9 +214,15 @@ static void intel_prepare_ddi_buffers(struct drm_device *dev, enum port port)
 		I915_WRITE(reg, ddi_translations[i]);
 		reg += 4;
 	}
+
+	/* Choose a good default if VBT is badly populated */
+	if (hdmi_level == HDMI_LEVEL_SHIFT_UNKNOWN ||
+	    hdmi_level >= n_hdmi_entries)
+		hdmi_level = hdmi_800mV_0dB;
+
 	/* Entry 9 is for HDMI: */
 	for (i = 0; i < 2; i++) {
-		I915_WRITE(reg, hsw_ddi_translations_hdmi[hdmi_level * 2 + i]);
+		I915_WRITE(reg, ddi_translations_hdmi[hdmi_level * 2 + i]);
 		reg += 4;
 	}
 }
@@ -1205,6 +1235,21 @@ static void intel_ddi_pre_enable(struct intel_encoder *intel_encoder)
 
 	WARN_ON(intel_crtc->ddi_pll_sel == PORT_CLK_SEL_NONE);
 	I915_WRITE(PORT_CLK_SEL(port), intel_crtc->ddi_pll_sel);
+
+	if (type == INTEL_OUTPUT_DISPLAYPORT) {
+		struct intel_dp *intel_dp = enc_to_intel_dp(encoder);
+		uint32_t DP = intel_dp->DP;
+		/*
+		 * Train with 1 lane. There is no guarantee that the monitor supports
+		 * 2 or 4 lanes, and we wouldn't see any asymetricity with 4 lanes.
+		 */
+		DP &= ~(DDI_BUF_PORT_REVERSAL | DDI_PORT_WIDTH(4));
+		DP |= DDI_PORT_WIDTH(1);
+		if (intel_dp_is_reversed(intel_dp, DP))
+			intel_dp->DP |= DDI_BUF_PORT_REVERSAL;
+		else
+			intel_dp->DP &= ~DDI_BUF_PORT_REVERSAL;
+	}
 
 	if (type == INTEL_OUTPUT_DISPLAYPORT || type == INTEL_OUTPUT_EDP) {
 		struct intel_dp *intel_dp = enc_to_intel_dp(encoder);

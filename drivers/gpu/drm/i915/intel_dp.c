@@ -299,26 +299,6 @@ static u32 _pp_stat_reg(struct intel_dp *intel_dp)
 		return VLV_PIPE_PP_STATUS(vlv_power_sequencer_pipe(intel_dp));
 }
 
-static void assert_pwm(struct drm_i915_private *dev_priv,
-		       struct intel_connector *connector,
-		       bool expected_state)
-{
-	enum pipe pipe = intel_get_pipe_from_connector(connector);
-	bool state;
-
-	if (IS_VALLEYVIEW(dev_priv->dev) &&
-	    !(I915_READ(VLV_BLC_PWM_CTL2(pipe) & BLM_PWM_ENABLE)))
-		state = false;
-	else
-		state = (intel_panel_get_backlight(connector) != 0);
-
-	WARN(state != expected_state, "pwm state failure, expected %d, found "
-	     "%d\n", expected_state, state);
-}
-
-#define assert_pwm_enabled(d, p) assert_pwm((d), (p), true)
-#define assert_pwm_disabled(d, p) assert_pwm((d), (p), false)
-
 static bool ironlake_edp_have_panel_power(struct intel_dp *intel_dp)
 {
 	struct drm_device *dev = intel_dp_to_dev(intel_dp);
@@ -1258,8 +1238,6 @@ void ironlake_edp_panel_off(struct intel_dp *intel_dp)
 
 	WARN(!intel_dp->want_panel_vdd, "Need VDD to turn off panel\n");
 
-	assert_pwm_disabled(dev_priv, intel_dp->attached_connector);
-
 	pp = ironlake_get_pp_control(intel_dp);
 	/* We need to switch off panel power _and_ force vdd, for otherwise some
 	 * panels get very unhappy and cease to work. */
@@ -1278,7 +1256,8 @@ void ironlake_edp_panel_off(struct intel_dp *intel_dp)
 	intel_runtime_pm_put(dev_priv);
 }
 
-void ironlake_edp_backlight_on(struct intel_dp *intel_dp)
+/* Enable backlight in the panel power control. */
+static void _ironlake_edp_backlight_on(struct intel_dp *intel_dp)
 {
 	struct intel_digital_port *intel_dig_port = dp_to_dig_port(intel_dp);
 	struct drm_device *dev = intel_dig_port->base.base.dev;
@@ -1286,17 +1265,9 @@ void ironlake_edp_backlight_on(struct intel_dp *intel_dp)
 	u32 pp;
 	u32 pp_ctrl_reg;
 
-	if (!is_edp(intel_dp))
-		return;
-
-	DRM_DEBUG_KMS("\n");
 	pp = ironlake_get_pp_control(intel_dp);
 	if (pp & EDP_BLC_ENABLE)
 		return;
-
-	assert_pwm_disabled(dev_priv, intel_dp->attached_connector);
-
-	intel_panel_enable_backlight(intel_dp->attached_connector);
 
 	/*
 	 * If we enable the backlight right away following a panel power
@@ -1313,32 +1284,69 @@ void ironlake_edp_backlight_on(struct intel_dp *intel_dp)
 	POSTING_READ(pp_ctrl_reg);
 }
 
-void ironlake_edp_backlight_off(struct intel_dp *intel_dp)
+/* Enable backlight PWM and backlight PP control. */
+void ironlake_edp_backlight_on(struct intel_dp *intel_dp)
+{
+	if (!is_edp(intel_dp))
+		return;
+
+	DRM_DEBUG_KMS("\n");
+
+	intel_panel_enable_backlight(intel_dp->attached_connector);
+	_ironlake_edp_backlight_on(intel_dp);
+}
+
+/* Disable backlight in the panel power control. */
+static void _ironlake_edp_backlight_off(struct intel_dp *intel_dp)
 {
 	struct drm_device *dev = intel_dp_to_dev(intel_dp);
 	struct drm_i915_private *dev_priv = dev->dev_private;
 	u32 pp;
 	u32 pp_ctrl_reg;
 
-	if (!is_edp(intel_dp))
-		return;
-
-	DRM_DEBUG_KMS("\n");
 	pp = ironlake_get_pp_control(intel_dp);
 	if (!(pp & EDP_BLC_ENABLE))
 		return;
-
-	assert_pwm_enabled(dev_priv, intel_dp->attached_connector);
-
 	pp &= ~EDP_BLC_ENABLE;
 
 	pp_ctrl_reg = _pp_ctrl_reg(intel_dp);
 
 	I915_WRITE(pp_ctrl_reg, pp);
 	POSTING_READ(pp_ctrl_reg);
+}
 
+/* Disable backlight PP control and backlight PWM. */
+void ironlake_edp_backlight_off(struct intel_dp *intel_dp)
+{
+	if (!is_edp(intel_dp))
+		return;
+
+	DRM_DEBUG_KMS("\n");
+
+	_ironlake_edp_backlight_off(intel_dp);
 	msleep(intel_dp->backlight_off_delay);
 	intel_panel_disable_backlight(intel_dp->attached_connector);
+}
+
+/*
+ * Hook for controlling the panel power control backlight through the bl_power
+ * sysfs attribute. Take care to handle multiple calls.
+ */
+static void intel_edp_backlight_power(struct intel_connector *connector,
+				      bool enable)
+{
+	struct intel_dp *intel_dp = intel_attached_dp(&connector->base);
+	bool is_enabled = ironlake_get_pp_control(intel_dp) & EDP_BLC_ENABLE;
+
+	if (is_enabled == enable)
+		return;
+
+	DRM_DEBUG_KMS("\n");
+
+	if (enable)
+		_ironlake_edp_backlight_on(intel_dp);
+	else
+		_ironlake_edp_backlight_off(intel_dp);
 }
 
 static void ironlake_edp_pll_on(struct intel_dp *intel_dp)
@@ -1990,7 +1998,7 @@ intel_dp_voltage_max(struct intel_dp *intel_dp)
 	struct drm_device *dev = intel_dp_to_dev(intel_dp);
 	enum port port = dp_to_dig_port(intel_dp)->port;
 
-	if (IS_VALLEYVIEW(dev) || IS_BROADWELL(dev))
+	if (IS_VALLEYVIEW(dev))
 		return DP_TRAIN_VOLTAGE_SWING_1200;
 	else if (IS_GEN7(dev) && port == PORT_A)
 		return DP_TRAIN_VOLTAGE_SWING_800;
@@ -2006,18 +2014,7 @@ intel_dp_pre_emphasis_max(struct intel_dp *intel_dp, uint8_t voltage_swing)
 	struct drm_device *dev = intel_dp_to_dev(intel_dp);
 	enum port port = dp_to_dig_port(intel_dp)->port;
 
-	if (IS_BROADWELL(dev)) {
-		switch (voltage_swing & DP_TRAIN_VOLTAGE_SWING_MASK) {
-		case DP_TRAIN_VOLTAGE_SWING_400:
-		case DP_TRAIN_VOLTAGE_SWING_600:
-			return DP_TRAIN_PRE_EMPHASIS_6;
-		case DP_TRAIN_VOLTAGE_SWING_800:
-			return DP_TRAIN_PRE_EMPHASIS_3_5;
-		case DP_TRAIN_VOLTAGE_SWING_1200:
-		default:
-			return DP_TRAIN_PRE_EMPHASIS_0;
-		}
-	} else if (IS_HASWELL(dev)) {
+	if (IS_HASWELL(dev) || IS_BROADWELL(dev)) {
 		switch (voltage_swing & DP_TRAIN_VOLTAGE_SWING_MASK) {
 		case DP_TRAIN_VOLTAGE_SWING_400:
 			return DP_TRAIN_PRE_EMPHASIS_9_5;
@@ -2329,41 +2326,6 @@ intel_hsw_signal_levels(uint8_t train_set)
 	}
 }
 
-static uint32_t
-intel_bdw_signal_levels(uint8_t train_set)
-{
-	int signal_levels = train_set & (DP_TRAIN_VOLTAGE_SWING_MASK |
-					 DP_TRAIN_PRE_EMPHASIS_MASK);
-	switch (signal_levels) {
-	case DP_TRAIN_VOLTAGE_SWING_400 | DP_TRAIN_PRE_EMPHASIS_0:
-		return DDI_BUF_EMP_400MV_0DB_BDW;	/* Sel0 */
-	case DP_TRAIN_VOLTAGE_SWING_400 | DP_TRAIN_PRE_EMPHASIS_3_5:
-		return DDI_BUF_EMP_400MV_3_5DB_BDW;	/* Sel1 */
-	case DP_TRAIN_VOLTAGE_SWING_400 | DP_TRAIN_PRE_EMPHASIS_6:
-		return DDI_BUF_EMP_400MV_6DB_BDW;	/* Sel2 */
-
-	case DP_TRAIN_VOLTAGE_SWING_600 | DP_TRAIN_PRE_EMPHASIS_0:
-		return DDI_BUF_EMP_600MV_0DB_BDW;	/* Sel3 */
-	case DP_TRAIN_VOLTAGE_SWING_600 | DP_TRAIN_PRE_EMPHASIS_3_5:
-		return DDI_BUF_EMP_600MV_3_5DB_BDW;	/* Sel4 */
-	case DP_TRAIN_VOLTAGE_SWING_600 | DP_TRAIN_PRE_EMPHASIS_6:
-		return DDI_BUF_EMP_600MV_6DB_BDW;	/* Sel5 */
-
-	case DP_TRAIN_VOLTAGE_SWING_800 | DP_TRAIN_PRE_EMPHASIS_0:
-		return DDI_BUF_EMP_800MV_0DB_BDW;	/* Sel6 */
-	case DP_TRAIN_VOLTAGE_SWING_800 | DP_TRAIN_PRE_EMPHASIS_3_5:
-		return DDI_BUF_EMP_800MV_3_5DB_BDW;	/* Sel7 */
-
-	case DP_TRAIN_VOLTAGE_SWING_1200 | DP_TRAIN_PRE_EMPHASIS_0:
-		return DDI_BUF_EMP_1200MV_0DB_BDW;	/* Sel8 */
-
-	default:
-		DRM_DEBUG_KMS("Unsupported voltage swing/pre-emphasis level:"
-			      "0x%x\n", signal_levels);
-		return DDI_BUF_EMP_400MV_0DB_BDW;	/* Sel0 */
-	}
-}
-
 /* Properly updates "DP" with the correct signal levels. */
 static void
 intel_dp_set_signal_levels(struct intel_dp *intel_dp, uint32_t *DP)
@@ -2374,10 +2336,7 @@ intel_dp_set_signal_levels(struct intel_dp *intel_dp, uint32_t *DP)
 	uint32_t signal_levels, mask;
 	uint8_t train_set = intel_dp->train_set[0];
 
-	if (IS_BROADWELL(dev)) {
-		signal_levels = intel_bdw_signal_levels(train_set);
-		mask = DDI_BUF_EMP_MASK;
-	} else if (IS_HASWELL(dev)) {
+	if (IS_HASWELL(dev) || IS_BROADWELL(dev)) {
 		signal_levels = intel_hsw_signal_levels(train_set);
 		mask = DDI_BUF_EMP_MASK;
 	} else if (IS_VALLEYVIEW(dev)) {
@@ -2555,6 +2514,88 @@ static void intel_dp_set_idle_link_train(struct intel_dp *intel_dp)
 	if (wait_for((I915_READ(DP_TP_STATUS(port)) & DP_TP_STATUS_IDLE_DONE),
 		     1))
 		DRM_ERROR("Timed out waiting for DP idle patterns\n");
+}
+
+bool intel_dp_is_reversed(struct intel_dp *intel_dp, uint32_t DP)
+{
+	struct drm_encoder *encoder = &dp_to_dig_port(intel_dp)->base.base;
+	struct drm_device *dev = encoder->dev;
+	struct drm_i915_private *dev_priv = dev->dev_private;
+	uint8_t link_config[2];
+	int voltage_tries, loop_tries;
+	uint8_t voltage;
+	int i;
+
+	I915_WRITE(intel_dp->output_reg, DP);
+
+	if (HAS_DDI(dev))
+		intel_ddi_prepare_link_retrain(encoder);
+
+	link_config[0] = intel_dp->link_bw;
+	link_config[1] = 1;
+	if (drm_dp_enhanced_frame_cap(intel_dp->dpcd))
+		link_config[1] |= DP_LANE_COUNT_ENHANCED_FRAME_EN;
+	drm_dp_dpcd_write(&intel_dp->aux, DP_LINK_BW_SET, link_config, 2);
+
+	link_config[0] = 0;
+	link_config[1] = DP_SET_ANSI_8B10B;
+	drm_dp_dpcd_write(&intel_dp->aux, DP_DOWNSPREAD_CTRL, link_config, 2);
+
+	DP |= DP_PORT_EN;
+
+	/* clock recovery */
+	if (!intel_dp_reset_link_train(intel_dp, &DP,
+				       DP_TRAINING_PATTERN_1 |
+				       DP_LINK_SCRAMBLING_DISABLE)) {
+		DRM_ERROR("failed to enable link training\n");
+		return true;
+	}
+
+	voltage = 0xff;
+	voltage_tries = 0;
+	loop_tries = 0;
+	for(;;) {
+		uint8_t link_status[DP_LINK_STATUS_SIZE];
+
+		drm_dp_link_train_clock_recovery_delay(intel_dp->dpcd);
+		if (!intel_dp_get_link_status(intel_dp, link_status)) {
+			DRM_ERROR("failed to get link status\n");
+			break;
+		}
+
+		if (drm_dp_clock_recovery_ok(link_status, 1))
+			return false;
+
+		/* Check to see if we've tried the max voltage */
+		for (i = 0; i < 1; i++)
+			if ((intel_dp->train_set[i] & DP_TRAIN_MAX_SWING_REACHED) == 0)
+				break;
+		if (i == 1) {
+			++loop_tries;
+			if (loop_tries == 5)
+				break;
+			intel_dp_reset_link_train(intel_dp, &DP,
+						  DP_TRAINING_PATTERN_1 |
+						  DP_LINK_SCRAMBLING_DISABLE);
+			voltage_tries = 0;
+			continue;
+		}
+
+		/* Check to see if we've tried the same voltage 5 times */
+		if ((intel_dp->train_set[0] & DP_TRAIN_VOLTAGE_SWING_MASK) == voltage) {
+			++voltage_tries;
+			if (voltage_tries == 5)
+				break;
+		} else
+			voltage_tries = 0;
+		voltage = intel_dp->train_set[0] & DP_TRAIN_VOLTAGE_SWING_MASK;
+
+		/* Update training set as requested by target */
+		if (!intel_dp_update_link_train(intel_dp, &DP, link_status))
+			break;
+	}
+
+	return true;
 }
 
 /* Enable corresponding port and start training pattern 1 */
@@ -3732,6 +3773,7 @@ static bool intel_edp_init_connector(struct intel_dp *intel_dp,
 	}
 
 	intel_panel_init(&intel_connector->panel, fixed_mode);
+	intel_connector->panel.backlight_power = intel_edp_backlight_power;
 	intel_panel_setup_backlight(connector);
 
 	return true;
@@ -3781,12 +3823,13 @@ intel_dp_init_connector(struct intel_digital_port *intel_dig_port,
 			  ironlake_panel_vdd_work);
 
 	intel_connector_attach_encoder(intel_connector, intel_encoder);
-	drm_sysfs_connector_add(connector);
+	drm_connector_register(connector);
 
 	if (HAS_DDI(dev))
 		intel_connector->get_hw_state = intel_ddi_connector_get_hw_state;
 	else
 		intel_connector->get_hw_state = intel_connector_get_hw_state;
+	intel_connector->unregister = intel_connector_unregister;
 
 	intel_dp->aux_ch_ctl_reg = intel_dp->output_reg + 0x10;
 	if (HAS_DDI(dev)) {
@@ -3845,7 +3888,7 @@ intel_dp_init_connector(struct intel_digital_port *intel_dig_port,
 			ironlake_panel_vdd_off_sync(intel_dp);
 			drm_modeset_unlock(&dev->mode_config.connection_mutex);
 		}
-		drm_sysfs_connector_remove(connector);
+		drm_connector_unregister(connector);
 		drm_connector_cleanup(connector);
 		return false;
 	}

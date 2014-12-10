@@ -741,14 +741,13 @@ static int solo_enc_start_streaming(struct vb2_queue *q, unsigned int count)
 	return solo_ring_start(solo_enc->solo_dev);
 }
 
-static int solo_enc_stop_streaming(struct vb2_queue *q)
+static void solo_enc_stop_streaming(struct vb2_queue *q)
 {
 	struct solo_enc_dev *solo_enc = vb2_get_drv_priv(q);
 
 	solo_enc_off(solo_enc);
 	INIT_LIST_HEAD(&solo_enc->vidq_active);
 	solo_ring_stop(solo_enc->solo_dev);
-	return 0;
 }
 
 static struct vb2_ops solo_enc_video_qops = {
@@ -1127,7 +1126,7 @@ static int solo_s_ctrl(struct v4l2_ctrl *ctrl)
 		solo_motion_toggle(solo_enc, ctrl->val);
 		return 0;
 	case V4L2_CID_OSD_TEXT:
-		strcpy(solo_enc->osd_text, ctrl->string);
+		strcpy(solo_enc->osd_text, ctrl->p_new.p_char);
 		err = solo_osd_print(solo_enc);
 		return err;
 	default:

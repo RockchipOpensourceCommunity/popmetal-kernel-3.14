@@ -20,13 +20,13 @@
 #include <soc/tegra/flowctrl.h>
 #include <soc/tegra/fuse.h>
 #include <soc/tegra/iomap.h>
+#include <soc/tegra/reset.h>
 
 #include <asm/asm-offsets.h>
 #include <asm/cache.h>
 #include <asm/hardware/cache-l2x0.h>
 
-#include "reset.h"
-#include "sleep.h"
+#include <soc/tegra/sleep.h>
 
 #define PMC_SCRATCH41	0x140
 

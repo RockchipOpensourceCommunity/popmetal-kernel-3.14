@@ -30,6 +30,7 @@
 #include <drm/drmP.h>
 #include <drm/drm_fb_helper.h>
 #include <drm/drm_crtc_helper.h>
+#include <video/imx-ipu-v3.h>
 
 #include "imx-drm.h"
 
@@ -132,6 +133,7 @@ static void tve_lock(void *__tve)
 __acquires(&tve->lock)
 {
 	struct imx_tve *tve = __tve;
+
 	spin_lock(&tve->lock);
 }
 
@@ -139,6 +141,7 @@ static void tve_unlock(void *__tve)
 __releases(&tve->lock)
 {
 	struct imx_tve *tve = __tve;
+
 	spin_unlock(&tve->lock);
 }
 
@@ -248,11 +251,6 @@ static int imx_tve_connector_mode_valid(struct drm_connector *connector,
 {
 	struct imx_tve *tve = con_to_tve(connector);
 	unsigned long rate;
-	int ret;
-
-	ret = imx_drm_connector_mode_valid(connector, mode);
-	if (ret != MODE_OK)
-		return ret;
 
 	/* pixel clock with 2x oversampling */
 	rate = clk_round_rate(tve->clk, 2000UL * mode->clock) / 2000;
@@ -434,8 +432,7 @@ static long clk_tve_di_round_rate(struct clk_hw *hw, unsigned long rate,
 		return *prate / 4;
 	else if (div >= 2)
 		return *prate / 2;
-	else
-		return *prate;
+	return *prate;
 }
 
 static int clk_tve_di_set_rate(struct clk_hw *hw, unsigned long rate,
@@ -540,7 +537,7 @@ static struct regmap_config tve_regmap_config = {
 	.max_register = 0xdc,
 };
 
-static const char *imx_tve_modes[] = {
+static const char * const imx_tve_modes[] = {
 	[TVE_MODE_TVOUT]  = "tvout",
 	[TVE_MODE_VGA] = "vga",
 };
@@ -581,7 +578,7 @@ static int imx_tve_bind(struct device *dev, struct device *master, void *data)
 	tve->dev = dev;
 	spin_lock_init(&tve->lock);
 
-	ddc_node = of_parse_phandle(np, "ddc", 0);
+	ddc_node = of_parse_phandle(np, "ddc-i2c-bus", 0);
 	if (ddc_node) {
 		tve->ddc = of_find_i2c_adapter_by_node(ddc_node);
 		of_node_put(ddc_node);

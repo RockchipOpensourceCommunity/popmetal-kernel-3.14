@@ -39,15 +39,61 @@ static const struct cros_ec_pd_firmware_image firmware_images[] = {
 	{
 		.id_major = PD_DEVICE_TYPE_ZINGER,
 		.id_minor = 1,
-		.filename = "cros-pd/zinger_000002.bin",
-		.hash = { 0x9e, 0x28, 0xfb, 0x69, 0x9c,
-			  0xf9, 0xc3, 0x3c, 0x47, 0x26,
-			  0x10, 0x26, 0x48, 0x6a, 0xe1,
-			  0xaf, 0x71, 0x44, 0x95, 0xc6 },
+		.usb_vid = USB_VID_GOOGLE,
+		.usb_pid = USB_PID_ZINGER,
+		.filename = "cros-pd/zinger_v1.7.262-9a5b8f4.bin",
+		.hash = { 0x05, 0x94, 0xb8, 0x97, 0x8a,
+			  0x9a, 0xa0, 0x0a, 0x71, 0x07,
+			  0x37, 0xba, 0x8f, 0x4c, 0x01,
+			  0xe6, 0x45, 0x6d, 0xb0, 0x01 },
 	},
 };
 
 static const int firmware_image_count = ARRAY_SIZE(firmware_images);
+
+/**
+ * cros_ec_pd_command - Send a command to the EC. Returns 0 on success,
+ * <0 on failure.
+ *
+ * @dev: PD device
+ * @pd_dev: EC PD device
+ * @command: EC command
+ * @outdata: EC command output data
+ * @outsize: Size of outdata
+ * @indata: EC command input data
+ * @insize: Size of indata
+ */
+static int cros_ec_pd_command(struct device *dev,
+			      struct cros_ec_dev *pd_dev,
+			      int command,
+			      uint8_t *outdata,
+			      int outsize,
+			      uint8_t *indata,
+			      int insize)
+{
+	struct cros_ec_command msg = {0};
+	int ret;
+
+	if (!pd_dev) {
+		dev_err(dev, "No ec_dev device\n");
+		return -1;
+	}
+
+	msg.command = pd_dev->cmd_offset + command;
+	msg.outdata = outdata;
+	msg.outsize = outsize;
+	msg.indata = indata;
+	msg.insize = insize;
+
+	ret = cros_ec_cmd_xfer(pd_dev->ec_dev, &msg);
+	if (ret < 0) {
+		dev_err(dev, "Command xfer error (err:%d)\n", ret);
+		return ret;
+	} else if (msg.result)
+		return -EECRESULT - msg.result;
+	else
+		return EC_RES_SUCCESS;
+}
 
 /**
  * cros_ec_pd_get_status - Get info about a possible PD device attached to a
@@ -56,41 +102,33 @@ static const int firmware_image_count = ARRAY_SIZE(firmware_images);
  * @dev: PD device
  * @pd_dev: EC PD device
  * @port: Port # on device
- * @result: Stores received EC command result, on success
  * @hash_entry: Stores received PD device RW FW info, on success
+ * @discovery_entry: Stores received PD device USB info, if device present
  */
 static int cros_ec_pd_get_status(struct device *dev,
 				 struct cros_ec_dev *pd_dev,
 				 int port,
-				 uint32_t *result,
 				 struct ec_params_usb_pd_rw_hash_entry
-					*hash_entry)
+					*hash_entry,
+				 struct ec_params_usb_pd_discovery_entry
+					*discovery_entry)
 {
-	int ret;
-	struct cros_ec_command msg = { 0 };
 	struct ec_params_usb_pd_info_request info_request;
-
-	if (!pd_dev) {
-		dev_err(dev, "No ec_dev device\n");
-		return -1;
-	}
+	int ret;
 
 	info_request.port = port;
-
-	msg.command = EC_CMD_USB_PD_DEV_INFO | pd_dev->cmd_offset;
-	msg.indata = (uint8_t *)hash_entry;
-	msg.insize = sizeof(*hash_entry);
-	msg.outdata = (uint8_t *)&info_request;
-	msg.outsize = sizeof(info_request);
-
-	ret = cros_ec_cmd_xfer(pd_dev->ec_dev, &msg);
-	if (ret < 0) {
-		dev_err(dev, "Unable to get device status (err:%d)\n", ret);
+	ret = cros_ec_pd_command(dev, pd_dev, EC_CMD_USB_PD_DEV_INFO,
+				 (uint8_t *)&info_request, sizeof(info_request),
+				 (uint8_t *)hash_entry, sizeof(*hash_entry));
+	/* Skip getting USB discovery data if no device present on port */
+	if (ret < 0 || hash_entry->dev_id == PD_DEVICE_TYPE_NONE)
 		return ret;
-	}
 
-	*result = msg.result;
-	return 0;
+	return cros_ec_pd_command(dev, pd_dev, EC_CMD_USB_PD_DISCOVERY,
+				  (uint8_t *)&info_request,
+				  sizeof(info_request),
+				  (uint8_t *)discovery_entry,
+				  sizeof(*discovery_entry));
 }
 
 /**
@@ -98,7 +136,7 @@ static int cros_ec_pd_get_status(struct device *dev,
  * have firmware available. EC typically will not store more than four hashes.
  * Returns 0 on success, <0 on failure.
  *
- * @dev: device
+ * @dev: PD device
  * @pd_dev: EC PD device
  * @fw: FW update image to inform the EC of
  */
@@ -107,70 +145,74 @@ static int cros_ec_pd_send_hash_entry(struct device *dev,
 				      const struct cros_ec_pd_firmware_image
 						   *fw)
 {
-	int ret;
-	struct cros_ec_command msg = { 0 };
 	struct ec_params_usb_pd_rw_hash_entry hash_entry;
 
-	if (!pd_dev) {
-		dev_err(dev, "No pd_dev device\n");
-		return -1;
-	}
-
-	msg.command = EC_CMD_USB_PD_RW_HASH_ENTRY | pd_dev->cmd_offset;
-	msg.indata = NULL;
-	msg.insize = 0;
-	msg.outdata = (uint8_t *)&hash_entry;
-	msg.outsize = sizeof(hash_entry);
 	hash_entry.dev_id = MAJOR_MINOR_TO_DEV_ID(fw->id_major, fw->id_minor);
-	memcpy(hash_entry.dev_rw_hash.b, fw->hash, PD_RW_HASH_SIZE);
+	memcpy(hash_entry.dev_rw_hash, fw->hash, PD_RW_HASH_SIZE);
 
-	ret = cros_ec_cmd_xfer(pd_dev->ec_dev, &msg);
-	if (ret < 0)
-		dev_err(dev, "Unable to send device hash (err:%d)\n", ret);
-	return ret;
+	return cros_ec_pd_command(dev, pd_dev, EC_CMD_USB_PD_RW_HASH_ENTRY,
+				  (uint8_t *)&hash_entry, sizeof(hash_entry),
+				  NULL, 0);
 }
 
 /**
- * cros_ec_pd_send_fw_update_cmd - Calls cros_ec_cmd_xfer to send update-
- * related EC cmmand.
+ * cros_ec_pd_send_fw_update_cmd - Send update-related EC command.
+ * Returns 0 on success, <0 on failure.
  *
+ * @dev: PD device
  * @pd_dev: EC PD device
- * @msg: EC command message with non-size parameters already set
- * @cmd: fw_update command
- * @size: pd command payload size in bytes
+ * @pd_cmd: fw_update command
  */
-static int cros_ec_pd_send_fw_update_cmd(
-	struct cros_ec_device *pd_dev,
-	struct cros_ec_command *msg,
-	uint8_t cmd,
-	uint32_t size)
+static int cros_ec_pd_send_fw_update_cmd(struct device *dev,
+					 struct cros_ec_dev *pd_dev,
+					 struct ec_params_usb_pd_fw_update
+						*pd_cmd)
 {
-	struct ec_params_usb_pd_fw_update *pd_cmd =
-		(struct ec_params_usb_pd_fw_update *)msg->outdata;
+	return cros_ec_pd_command(dev, pd_dev, EC_CMD_USB_PD_FW_UPDATE,
+				  (uint8_t *)pd_cmd,
+				  pd_cmd->size + sizeof(*pd_cmd),
+				  NULL, 0);
+}
 
-	pd_cmd->cmd = cmd;
-	pd_cmd->size = size;
-	msg->outsize = pd_cmd->size + sizeof(*pd_cmd);
+/**
+ * cros_ec_pd_get_num_ports - Get number of EC charge ports.
+ * Returns 0 on success, <0 on failure.
+ *
+ * @dev: PD device
+ * @pd_dev: EC PD device
+ * @num_ports: Holds number of ports, on command success
+ */
+static int cros_ec_pd_get_num_ports(struct device *dev,
+				    struct cros_ec_dev *pd_dev,
+				    int *num_ports)
+{
+	struct ec_response_usb_pd_ports resp;
+	int ret;
 
-	return cros_ec_cmd_xfer(pd_dev, msg);
+	ret = cros_ec_pd_command(dev, pd_dev, EC_CMD_USB_PD_PORTS,
+				 NULL, 0,
+				 (uint8_t *)&resp, sizeof(resp));
+	if (ret == EC_RES_SUCCESS)
+		*num_ports = resp.num_ports;
+	return ret;
 }
 
 
 /**
  * cros_ec_pd_fw_update - Send EC_CMD_USB_PD_FW_UPDATE command to perform
  * update-related operation.
+ * Returns 0 on success, <0 on failure.
  *
  * @dev: PD device
- * @fw: RW FW update file
  * @pd_dev: EC PD device
+ * @fw: RW FW update file
  * @port: Port# to which update device is attached
  */
 static int cros_ec_pd_fw_update(struct device *dev,
-				const struct firmware *fw,
 				struct cros_ec_dev *pd_dev,
+				const struct firmware *fw,
 				uint8_t port)
 {
-	struct cros_ec_command msg = { 0 };
 	int i, ret;
 
 	uint8_t cmd_buf[sizeof(struct ec_params_usb_pd_fw_update) +
@@ -179,47 +221,42 @@ static int cros_ec_pd_fw_update(struct device *dev,
 		(struct ec_params_usb_pd_fw_update *)cmd_buf;
 	uint8_t *pd_cmd_data = cmd_buf + sizeof(*pd_cmd);
 
-	/* Common host command */
-	msg.command = EC_CMD_USB_PD_FW_UPDATE | pd_dev->cmd_offset;
-	msg.indata = NULL;
-	msg.insize = 0;
-	msg.outdata = (uint8_t *)pd_cmd;
-
 	/* Common port */
 	pd_cmd->port = port;
 
 	/* Erase signature */
-	ret = cros_ec_pd_send_fw_update_cmd(pd_dev->ec_dev, &msg,
-					    USB_PD_FW_ERASE_SIG, 0);
+	pd_cmd->cmd = USB_PD_FW_ERASE_SIG;
+	pd_cmd->size = 0;
+	ret = cros_ec_pd_send_fw_update_cmd(dev, pd_dev, pd_cmd);
 	if (ret < 0) {
 		dev_err(dev, "Unable to clear PD signature (err:%d)\n", ret);
 		return ret;
 	}
 
 	/* Reboot PD */
-	ret = cros_ec_pd_send_fw_update_cmd(pd_dev->ec_dev, &msg,
-					    USB_PD_FW_REBOOT, 0);
+	pd_cmd->cmd = USB_PD_FW_REBOOT;
+	pd_cmd->size = 0;
+	ret = cros_ec_pd_send_fw_update_cmd(dev, pd_dev, pd_cmd);
 	if (ret < 0) {
-		dev_err(dev, "Unable to reboot PD (err:%d)\n", ret);
+		dev_err(dev, "Unable to clear PD signature (err:%d)\n", ret);
 		return ret;
 	}
 
 	/* Erase RW flash */
-	ret = cros_ec_pd_send_fw_update_cmd(pd_dev->ec_dev, &msg,
-					    USB_PD_FW_FLASH_ERASE, 0);
+	pd_cmd->cmd = USB_PD_FW_FLASH_ERASE;
+	pd_cmd->size = 0;
+	ret = cros_ec_pd_send_fw_update_cmd(dev, pd_dev, pd_cmd);
 	if (ret < 0) {
-		dev_err(dev, "Unable to erase PD RW flash (err:%d)\n", ret);
+		dev_err(dev, "Unable to clear PD signature (err:%d)\n", ret);
 		return ret;
 	}
 
 	/* Write RW flash */
+	pd_cmd->cmd = USB_PD_FW_FLASH_WRITE;
 	for (i = 0; i < fw->size; i += PD_FLASH_WRITE_STEP) {
-		int size = min(fw->size - i, (size_t)PD_FLASH_WRITE_STEP);
-		memcpy(pd_cmd_data, fw->data + i, size);
-		ret = cros_ec_pd_send_fw_update_cmd(pd_dev->ec_dev,
-						    &msg,
-						    USB_PD_FW_FLASH_WRITE,
-						    size);
+		pd_cmd->size = min(fw->size - i, (size_t)PD_FLASH_WRITE_STEP);
+		memcpy(pd_cmd_data, fw->data + i, pd_cmd->size);
+		ret = cros_ec_pd_send_fw_update_cmd(dev, pd_dev, pd_cmd);
 		if (ret < 0) {
 			dev_err(dev, "Unable to write PD RW flash (err:%d)\n",
 				ret);
@@ -228,10 +265,11 @@ static int cros_ec_pd_fw_update(struct device *dev,
 	}
 
 	/* Reboot PD into new RW */
-	ret = cros_ec_pd_send_fw_update_cmd(pd_dev->ec_dev, &msg,
-					    USB_PD_FW_REBOOT, 0);
+	pd_cmd->cmd = USB_PD_FW_REBOOT;
+	pd_cmd->size = 0;
+	ret = cros_ec_pd_send_fw_update_cmd(dev, pd_dev, pd_cmd);
 	if (ret < 0) {
-		dev_err(dev, "Unable to reboot PD post-update (err:%d)\n", ret);
+		dev_err(dev, "Unable to clear PD signature (err:%d)\n", ret);
 		return ret;
 	}
 
@@ -240,12 +278,14 @@ static int cros_ec_pd_fw_update(struct device *dev,
 
 /**
  * find_firmware_image - Search firmware image table for an image matching
- * the passed PD device id. Returns matching index if id is found and
- * PD_NO_IMAGE if id is not found in table.
+ * the passed attributes. Returns matching index if id is found and
+ * PD_NO_IMAGE if not found in table.
  *
  * @dev_id: Target PD device id
+ * @vid: Target USB VID
+ * @pid: Target USB PID
  */
-static int find_firmware_image(uint16_t dev_id)
+static int find_firmware_image(uint16_t dev_id, uint16_t vid, uint16_t pid)
 {
 	/*
 	 * TODO(shawnn): Replace sequential table search with modified binary
@@ -256,48 +296,69 @@ static int find_firmware_image(uint16_t dev_id)
 	for (i = 0; i < firmware_image_count; ++i)
 		if (MAJOR_MINOR_TO_DEV_ID(firmware_images[i].id_major,
 					  firmware_images[i].id_minor)
-					  == dev_id)
+					  == dev_id &&
+		    firmware_images[i].usb_vid == vid &&
+		    firmware_images[i].usb_pid == pid)
 			return i;
 
 	return PD_NO_IMAGE;
 }
 
 /**
- * acpi_cros_ec_pd_notify - Upon receiving a notification host event from the
- * EC, probe the status of attached PD devices and kick off an RW firmware
- * update if needed.
+ * cros_ec_pd_update_check - Probe the status of attached PD devices and kick
+ * off an RW firmware update if needed. This is run as a deferred task on
+ * module load, resume, and when an ACPI event is received (typically on
+ * PD device insertion).
+ *
+ * @work: Delayed work pointer
  */
-static void acpi_cros_ec_pd_notify(struct acpi_device *acpi_device, u32 event)
+static void cros_ec_pd_update_check(struct work_struct *work)
 {
 	const struct firmware *fw;
 	struct ec_params_usb_pd_rw_hash_entry hash_entry;
-	struct device *dev = &acpi_device->dev;
+	struct ec_params_usb_pd_discovery_entry discovery_entry;
 	char *file;
-	uint32_t result;
 	int ret, port, i;
+	struct cros_ec_pd_update_data *drv_data =
+		container_of(to_delayed_work(work),
+		struct cros_ec_pd_update_data, work);
+	struct device *dev = drv_data->dev;
 
 	if (!pd_ec) {
 		dev_err(dev, "No pd_ec device found\n");
 		return;
 	}
 
+	/*
+	 * If there is an EC based charger, send a notification to it to
+	 * trigger a refresh of the power supply state.
+	 */
+	if (pd_ec->ec_dev->charger) {
+		power_supply_changed(pd_ec->ec_dev->charger);
+	}
+
 	/* Received notification, send command to check on PD status. */
-	for (port = 0; port < PD_MAX_PORTS; ++port) {
-		ret = cros_ec_pd_get_status(dev, pd_ec, port, &result,
-					    &hash_entry);
+	for (port = 0; port < drv_data->num_ports; ++port) {
+		ret = cros_ec_pd_get_status(dev,
+					    pd_ec,
+					    port,
+					    &hash_entry,
+					    &discovery_entry);
 		if (ret < 0) {
 			dev_err(dev, "Can't get device status (err:%d)\n",
 				ret);
 			return;
-		} else if (result == EC_RES_SUCCESS) {
+		} else  {
 			if (hash_entry.dev_id == PD_DEVICE_TYPE_NONE)
 				i = PD_NO_IMAGE;
 			else
-				i = find_firmware_image(hash_entry.dev_id);
+				i = find_firmware_image(hash_entry.dev_id,
+					discovery_entry.vid,
+					discovery_entry.pid);
 
 			/* Device found, should we update firmware? */
 			if (i != PD_NO_IMAGE &&
-			    memcmp(hash_entry.dev_rw_hash.b,
+			    memcmp(hash_entry.dev_rw_hash,
 				   firmware_images[i].hash,
 				   PD_RW_HASH_SIZE) != 0) {
 				file = firmware_images[i].filename;
@@ -315,7 +376,7 @@ static void acpi_cros_ec_pd_notify(struct acpi_device *acpi_device, u32 event)
 				}
 
 				/* Update firmware */
-				cros_ec_pd_fw_update(dev, fw, pd_ec, port);
+				cros_ec_pd_fw_update(dev, pd_ec, fw, port);
 done:
 				release_firmware(fw);
 			} else if (i != PD_NO_IMAGE) {
@@ -331,20 +392,94 @@ done:
 				/* Unknown PD device -- don't update FW */
 			}
 		}
-		/* Non-success status, we've probed every port that exists. */
-		else
-			break;
 	}
+}
 
+/**
+ * acpi_cros_ec_pd_notify - Called upon receiving an ACPI event (typically
+ * due to PD device insertion). Queue a delayed task to check if a PD
+ * device FW update is necessary.
+ */
+static void acpi_cros_ec_pd_notify(struct acpi_device *acpi_device, u32 event)
+{
+	struct cros_ec_pd_update_data *drv_data =
+		(struct cros_ec_pd_update_data *)
+		dev_get_drvdata(&acpi_device->dev);
+
+	if (drv_data)
+		queue_delayed_work(drv_data->workqueue, &drv_data->work,
+			PD_UPDATE_CHECK_DELAY);
+	else
+		dev_warn(&acpi_device->dev,
+			"ACPI notification skipped due to missing drv_data\n");
 }
 
 static int acpi_cros_ec_pd_add(struct acpi_device *acpi_device)
 {
+	struct cros_ec_pd_update_data *drv_data;
+	int ret;
+
+	drv_data =
+		devm_kzalloc(&acpi_device->dev, sizeof(*drv_data), GFP_KERNEL);
+	if (!drv_data) {
+		ret = -ENOMEM;
+		goto fail;
+	}
+
+	drv_data->dev = &acpi_device->dev;
+	INIT_DELAYED_WORK(&drv_data->work, cros_ec_pd_update_check);
+	drv_data->workqueue =
+		create_singlethread_workqueue("cros_ec_pd_update");
+	if (cros_ec_pd_get_num_ports(drv_data->dev,
+				     pd_ec,
+				     &drv_data->num_ports) < 0) {
+		dev_err(drv_data->dev, "Can't get num_ports\n");
+		ret = -EINVAL;
+		goto fail;
+	}
+	dev_set_drvdata(&acpi_device->dev, drv_data);
+
+	queue_delayed_work(drv_data->workqueue, &drv_data->work,
+		PD_UPDATE_CHECK_DELAY);
+	return 0;
+
+fail:
+	if (drv_data) {
+		dev_set_drvdata(&acpi_device->dev, NULL);
+		devm_kfree(&acpi_device->dev, drv_data);
+	}
+	return ret;
+}
+
+static int acpi_cros_ec_pd_resume(struct device *dev)
+{
+	struct cros_ec_pd_update_data *drv_data =
+		(struct cros_ec_pd_update_data *)dev_get_drvdata(dev);
+
+	if (drv_data)
+		queue_delayed_work(drv_data->workqueue, &drv_data->work,
+			PD_UPDATE_CHECK_DELAY);
 	return 0;
 }
 
 static int acpi_cros_ec_pd_remove(struct acpi_device *acpi_device)
 {
+	struct cros_ec_pd_update_data *drv_data =
+		(struct cros_ec_pd_update_data *)
+		dev_get_drvdata(&acpi_device->dev);
+
+	if (drv_data)
+		flush_delayed_work(&drv_data->work);
+	return 0;
+}
+
+static int acpi_cros_ec_pd_suspend(struct device *dev)
+{
+	struct cros_ec_pd_update_data *drv_data =
+		(struct cros_ec_pd_update_data *)dev_get_drvdata(dev);
+
+	if (drv_data)
+		flush_delayed_work(&drv_data->work);
 	return 0;
 }
 
@@ -354,12 +489,15 @@ static umode_t cros_ec_pd_attrs_are_visible(struct kobject *kobj,
 	struct device *dev = container_of(kobj, struct device, kobj);
 	struct cros_ec_dev *ec = container_of(dev, struct cros_ec_dev,
 					      class_dev);
-	uint32_t result;
 	struct ec_params_usb_pd_rw_hash_entry hash_entry;
+	struct ec_params_usb_pd_discovery_entry discovery_entry;
 
 	/* Check if a PD MCU is present */
-	if (cros_ec_pd_get_status(dev, ec, 0, &result, &hash_entry) == 0 &&
-	    result == EC_RES_SUCCESS) {
+	if (cros_ec_pd_get_status(dev,
+				  ec,
+				  0,
+				  &hash_entry,
+				  &discovery_entry) == EC_RES_SUCCESS) {
 		/*
 		 * Save our ec pointer so we can conduct transactions.
 		 * TODO(shawnn): Find a better way to access the ec pointer.
@@ -414,6 +552,9 @@ static const struct acpi_device_id pd_device_ids[] = {
 
 MODULE_DEVICE_TABLE(acpi, pd_device_ids);
 
+static SIMPLE_DEV_PM_OPS(acpi_cros_ec_pd_pm,
+	acpi_cros_ec_pd_suspend, acpi_cros_ec_pd_resume);
+
 static struct acpi_driver acpi_cros_ec_pd_driver = {
 	.name = "cros_ec_pd_update",
 	.class = "cros_ec_pd_update",
@@ -423,6 +564,7 @@ static struct acpi_driver acpi_cros_ec_pd_driver = {
 		.remove = acpi_cros_ec_pd_remove,
 		.notify = acpi_cros_ec_pd_notify,
 	},
+	.drv.pm = &acpi_cros_ec_pd_pm,
 };
 
 module_acpi_driver(acpi_cros_ec_pd_driver);

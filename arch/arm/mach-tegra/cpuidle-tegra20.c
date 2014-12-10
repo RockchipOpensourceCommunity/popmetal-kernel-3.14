@@ -28,6 +28,8 @@
 
 #include <soc/tegra/flowctrl.h>
 #include <soc/tegra/iomap.h>
+#include <soc/tegra/pm.h>
+#include <soc/tegra/sleep.h>
 
 #include <asm/cpuidle.h>
 #include <asm/proc-fns.h>
@@ -35,8 +37,6 @@
 #include <asm/suspend.h>
 
 #include "irq.h"
-#include "pm.h"
-#include "sleep.h"
 
 #ifdef CONFIG_PM_SLEEP
 static bool abort_flag;

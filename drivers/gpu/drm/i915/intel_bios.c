@@ -317,6 +317,7 @@ parse_lfp_backlight(struct drm_i915_private *dev_priv, struct bdb_header *bdb)
 
 	dev_priv->vbt.backlight.pwm_freq_hz = entry->pwm_freq_hz;
 	dev_priv->vbt.backlight.active_low_pwm = entry->active_low_pwm;
+	dev_priv->vbt.backlight.min_brightness = entry->min_brightness;
 
 	/* NB: It's probably safe to do this for !VLV platforms too. */
 	if (IS_VALLEYVIEW(dev_priv->dev) && !entry->min_brightness)
@@ -338,7 +339,7 @@ parse_lfp_backlight(struct drm_i915_private *dev_priv, struct bdb_header *bdb)
 		      "active %s, min brightness %u, level %u\n",
 		      dev_priv->vbt.backlight.pwm_freq_hz,
 		      dev_priv->vbt.backlight.active_low_pwm ? "low" : "high",
-		      entry->min_brightness,
+		      dev_priv->vbt.backlight.min_brightness,
 		      backlight_data->level[panel_type]);
 }
 
@@ -737,12 +738,10 @@ static void parse_ddi_port(struct drm_i915_private *dev_priv, enum port port,
 	if (bdb->version >= 158) {
 		/* The VBT HDMI level shift values match the table we have. */
 		hdmi_level_shift = child->raw[7] & 0xF;
-		if (hdmi_level_shift < 0xC) {
-			DRM_DEBUG_KMS("VBT HDMI level shift for port %c: %d\n",
-				      port_name(port),
-				      hdmi_level_shift);
-			info->hdmi_level_shift = hdmi_level_shift;
-		}
+		DRM_DEBUG_KMS("VBT HDMI level shift for port %c: %d\n",
+			      port_name(port),
+			      hdmi_level_shift);
+		info->hdmi_level_shift = hdmi_level_shift;
 	}
 }
 
@@ -863,8 +862,7 @@ init_vbt_defaults(struct drm_i915_private *dev_priv)
 		struct ddi_vbt_port_info *info =
 			&dev_priv->vbt.ddi_port_info[port];
 
-		/* Recommended BSpec default: 800mV 0dB. */
-		info->hdmi_level_shift = 6;
+		info->hdmi_level_shift = HDMI_LEVEL_SHIFT_UNKNOWN;
 
 		info->supports_dvi = (port != PORT_A && port != PORT_E);
 		info->supports_hdmi = info->supports_dvi;

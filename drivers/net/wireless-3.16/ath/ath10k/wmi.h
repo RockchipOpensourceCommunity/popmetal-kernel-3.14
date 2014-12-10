@@ -109,6 +109,9 @@ enum wmi_service {
 	WMI_SERVICE_BURST,
 	WMI_SERVICE_SMART_ANTENNA_SW_SUPPORT,
 	WMI_SERVICE_SMART_ANTENNA_HW_SUPPORT,
+
+	/* keep last */
+	WMI_SERVICE_MAX,
 };
 
 enum wmi_10x_service {
@@ -218,8 +221,6 @@ static inline char *wmi_service_name(int service_id)
 
 #undef SVCSTR
 }
-
-#define WMI_MAX_SERVICE 64
 
 #define WMI_SERVICE_IS_ENABLED(wmi_svc_bmap, svc_id) \
 	(__le32_to_cpu((wmi_svc_bmap)[(svc_id)/(sizeof(u32))]) & \
@@ -346,9 +347,6 @@ static inline void wmi_main_svc_map(const __le32 *in, unsigned long *out)
 }
 
 #undef SVCMAP
-
-#define WMI_SERVICE_BM_SIZE \
-	((WMI_MAX_SERVICE + sizeof(u32) - 1)/sizeof(u32))
 
 /* 2 word representation of MAC addr */
 struct wmi_mac_addr {
@@ -1271,7 +1269,6 @@ enum wmi_channel_change_cause {
 				WMI_HT_CAP_RX_STBC       | \
 				WMI_HT_CAP_LDPC)
 
-
 /*
  * WMI_VHT_CAP_* these maps to ieee 802.11ac vht capability information
  * field. The fields not defined here are not supported, or reserved.
@@ -1405,7 +1402,7 @@ struct wmi_service_ready_event {
 	__le32 phy_capability;
 	/* Maximum number of frag table entries that SW will populate less 1 */
 	__le32 max_frag_entry;
-	__le32 wmi_service_bitmap[WMI_SERVICE_BM_SIZE];
+	__le32 wmi_service_bitmap[16];
 	__le32 num_rf_chains;
 	/*
 	 * The following field is only valid for service type
@@ -1431,11 +1428,11 @@ struct wmi_service_ready_event {
 	 * where FW can access this memory directly (or) by DMA.
 	 */
 	__le32 num_mem_reqs;
-	struct wlan_host_mem_req mem_reqs[1];
+	struct wlan_host_mem_req mem_reqs[0];
 } __packed;
 
 /* This is the definition from 10.X firmware branch */
-struct wmi_service_ready_event_10x {
+struct wmi_10x_service_ready_event {
 	__le32 sw_version;
 	__le32 abi_version;
 
@@ -1444,7 +1441,7 @@ struct wmi_service_ready_event_10x {
 
 	/* Maximum number of frag table entries that SW will populate less 1 */
 	__le32 max_frag_entry;
-	__le32 wmi_service_bitmap[WMI_SERVICE_BM_SIZE];
+	__le32 wmi_service_bitmap[16];
 	__le32 num_rf_chains;
 
 	/*
@@ -1470,9 +1467,8 @@ struct wmi_service_ready_event_10x {
 	 */
 	__le32 num_mem_reqs;
 
-	struct wlan_host_mem_req mem_reqs[1];
+	struct wlan_host_mem_req mem_reqs[0];
 } __packed;
-
 
 #define WMI_SERVICE_READY_TIMEOUT_HZ (5*HZ)
 #define WMI_UNIFIED_READY_TIMEOUT_HZ (5*HZ)
@@ -1887,38 +1883,26 @@ struct host_memory_chunk {
 	__le32 size;
 } __packed;
 
+struct wmi_host_mem_chunks {
+	__le32 count;
+	/* some fw revisions require at least 1 chunk regardless of count */
+	struct host_memory_chunk items[1];
+} __packed;
+
 struct wmi_init_cmd {
 	struct wmi_resource_config resource_config;
-	__le32 num_host_mem_chunks;
-
-	/*
-	 * variable number of host memory chunks.
-	 * This should be the last element in the structure
-	 */
-	struct host_memory_chunk host_mem_chunks[1];
+	struct wmi_host_mem_chunks mem_chunks;
 } __packed;
 
 /* _10x stucture is from 10.X FW API */
 struct wmi_init_cmd_10x {
 	struct wmi_resource_config_10x resource_config;
-	__le32 num_host_mem_chunks;
-
-	/*
-	 * variable number of host memory chunks.
-	 * This should be the last element in the structure
-	 */
-	struct host_memory_chunk host_mem_chunks[1];
+	struct wmi_host_mem_chunks mem_chunks;
 } __packed;
 
 struct wmi_init_cmd_10_2 {
 	struct wmi_resource_config_10_2 resource_config;
-	__le32 num_host_mem_chunks;
-
-	/*
-	 * variable number of host memory chunks.
-	 * This should be the last element in the structure
-	 */
-	struct host_memory_chunk host_mem_chunks[1];
+	struct wmi_host_mem_chunks mem_chunks;
 } __packed;
 
 struct wmi_chan_list_entry {
@@ -1978,7 +1962,7 @@ enum wmi_scan_priority {
 	WMI_SCAN_PRIORITY_COUNT   /* number of priorities supported */
 };
 
-struct wmi_start_scan_cmd {
+struct wmi_start_scan_common {
 	/* Scan ID */
 	__le32 scan_id;
 	/* Scan requestor ID */
@@ -2036,97 +2020,26 @@ struct wmi_start_scan_cmd {
 	__le32 probe_delay;
 	/* Scan control flags */
 	__le32 scan_ctrl_flags;
+} __packed;
 
-	/* Burst duration time in msecs */
-	__le32 burst_duration;
-	/*
-	 * TLV (tag length value )  paramerters follow the scan_cmd structure.
-	 * TLV can contain channel list, bssid list, ssid list and
-	 * ie. the TLV tags are defined above;
+struct wmi_start_scan_tlvs {
+	/* TLV parameters. These includes channel list, ssid list, bssid list,
+	 * extra ies.
 	 */
+	u8 tlvs[0];
+} __packed;
+
+struct wmi_start_scan_cmd {
+	struct wmi_start_scan_common common;
+	__le32 burst_duration_ms;
+	struct wmi_start_scan_tlvs tlvs;
 } __packed;
 
 /* This is the definition from 10.X firmware branch */
-struct wmi_start_scan_cmd_10x {
-	/* Scan ID */
-	__le32 scan_id;
-
-	/* Scan requestor ID */
-	__le32 scan_req_id;
-
-	/* VDEV id(interface) that is requesting scan */
-	__le32 vdev_id;
-
-	/* Scan Priority, input to scan scheduler */
-	__le32 scan_priority;
-
-	/* Scan events subscription */
-	__le32 notify_scan_events;
-
-	/* dwell time in msec on active channels */
-	__le32 dwell_time_active;
-
-	/* dwell time in msec on passive channels */
-	__le32 dwell_time_passive;
-
-	/*
-	 * min time in msec on the BSS channel,only valid if atleast one
-	 * VDEV is active
-	 */
-	__le32 min_rest_time;
-
-	/*
-	 * max rest time in msec on the BSS channel,only valid if at least
-	 * one VDEV is active
-	 */
-	/*
-	 * the scanner will rest on the bss channel at least min_rest_time
-	 * after min_rest_time the scanner will start checking for tx/rx
-	 * activity on all VDEVs. if there is no activity the scanner will
-	 * switch to off channel. if there is activity the scanner will let
-	 * the radio on the bss channel until max_rest_time expires.at
-	 * max_rest_time scanner will switch to off channel irrespective of
-	 * activity. activity is determined by the idle_time parameter.
-	 */
-	__le32 max_rest_time;
-
-	/*
-	 * time before sending next set of probe requests.
-	 * The scanner keeps repeating probe requests transmission with
-	 * period specified by repeat_probe_time.
-	 * The number of probe requests specified depends on the ssid_list
-	 * and bssid_list
-	 */
-	__le32 repeat_probe_time;
-
-	/* time in msec between 2 consequetive probe requests with in a set. */
-	__le32 probe_spacing_time;
-
-	/*
-	 * data inactivity time in msec on bss channel that will be used by
-	 * scanner for measuring the inactivity.
-	 */
-	__le32 idle_time;
-
-	/* maximum time in msec allowed for scan  */
-	__le32 max_scan_time;
-
-	/*
-	 * delay in msec before sending first probe request after switching
-	 * to a channel
-	 */
-	__le32 probe_delay;
-
-	/* Scan control flags */
-	__le32 scan_ctrl_flags;
-
-	/*
-	 * TLV (tag length value )  paramerters follow the scan_cmd structure.
-	 * TLV can contain channel list, bssid list, ssid list and
-	 * ie. the TLV tags are defined above;
-	 */
+struct wmi_10x_start_scan_cmd {
+	struct wmi_start_scan_common common;
+	struct wmi_start_scan_tlvs tlvs;
 } __packed;
-
 
 struct wmi_ssid_arg {
 	int len;
@@ -2187,7 +2100,6 @@ struct wmi_start_scan_arg {
 
 /* WMI_SCAN_CLASS_MASK must be the same value as IEEE80211_SCAN_CLASS_MASK */
 #define WMI_SCAN_CLASS_MASK 0xFF000000
-
 
 enum wmi_stop_scan_type {
 	WMI_SCAN_STOP_ONE	= 0x00000000, /* stop by scan_id */
@@ -2312,95 +2224,25 @@ struct wmi_mgmt_rx_event_v2 {
 #define PHY_ERROR_FALSE_RADAR_EXT		0x24
 #define PHY_ERROR_RADAR				0x05
 
-struct wmi_single_phyerr_rx_hdr {
-	/* TSF timestamp */
+struct wmi_phyerr {
 	__le32 tsf_timestamp;
-
-	/*
-	 * Current freq1, freq2
-	 *
-	 * [7:0]:    freq1[lo]
-	 * [15:8] :   freq1[hi]
-	 * [23:16]:   freq2[lo]
-	 * [31:24]:   freq2[hi]
-	 */
 	__le16 freq1;
 	__le16 freq2;
-
-	/*
-	 * Combined RSSI over all chains and channel width for this PHY error
-	 *
-	 * [7:0]: RSSI combined
-	 * [15:8]: Channel width (MHz)
-	 * [23:16]: PHY error code
-	 * [24:16]: reserved (future use)
-	 */
 	u8 rssi_combined;
 	u8 chan_width_mhz;
 	u8 phy_err_code;
 	u8 rsvd0;
-
-	/*
-	 * RSSI on chain 0 through 3
-	 *
-	 * This is formatted the same as the PPDU_START RX descriptor
-	 * field:
-	 *
-	 * [7:0]:   pri20
-	 * [15:8]:  sec20
-	 * [23:16]: sec40
-	 * [31:24]: sec80
-	 */
-
-	__le32 rssi_chain0;
-	__le32 rssi_chain1;
-	__le32 rssi_chain2;
-	__le32 rssi_chain3;
-
-	/*
-	 * Last calibrated NF value for chain 0 through 3
-	 *
-	 * nf_list_1:
-	 *
-	 * + [15:0] - chain 0
-	 * + [31:16] - chain 1
-	 *
-	 * nf_list_2:
-	 *
-	 * + [15:0] - chain 2
-	 * + [31:16] - chain 3
-	 */
-	__le32 nf_list_1;
-	__le32 nf_list_2;
-
-
-	/* Length of the frame */
+	__le32 rssi_chains[4];
+	__le16 nf_chains[4];
 	__le32 buf_len;
+	u8 buf[0];
 } __packed;
 
-struct wmi_single_phyerr_rx_event {
-	/* Phy error event header */
-	struct wmi_single_phyerr_rx_hdr hdr;
-	/* frame buffer */
-	u8 bufp[0];
-} __packed;
-
-struct wmi_comb_phyerr_rx_hdr {
-	/* Phy error phy error count */
-	__le32 num_phyerr_events;
+struct wmi_phyerr_event {
+	__le32 num_phyerrs;
 	__le32 tsf_l32;
 	__le32 tsf_u32;
-} __packed;
-
-struct wmi_comb_phyerr_rx_event {
-	/* Phy error phy error count */
-	struct wmi_comb_phyerr_rx_hdr hdr;
-	/*
-	 * frame buffer - contains multiple payloads in the order:
-	 *                    header - payload, header - payload...
-	 *  (The header is of type: wmi_single_phyerr_rx_hdr)
-	 */
-	u8 bufp[0];
+	struct wmi_phyerr phyerrs[0];
 } __packed;
 
 #define PHYERR_TLV_SIG				0xBB
@@ -2475,7 +2317,6 @@ struct phyerr_fft_report {
 #define SEARCH_FFT_REPORT_REG1_NUM_STR_BINS_IB_MASK	0x000000FF
 #define SEARCH_FFT_REPORT_REG1_NUM_STR_BINS_IB_LSB	0
 
-
 struct phyerr_tlv {
 	__le16 len;
 	u8 tag;
@@ -2505,7 +2346,6 @@ struct wmi_echo_event {
 struct wmi_echo_cmd {
 	__le32 value;
 } __packed;
-
 
 struct wmi_pdev_set_regdomain_cmd {
 	__le32 reg_domain;
@@ -2554,7 +2394,6 @@ struct wmi_pdev_set_quiet_cmd {
 	/* enable/disable */
 	__le32 enabled;
 } __packed;
-
 
 /*
  * 802.11g protection mode.
@@ -2918,11 +2757,6 @@ enum wmi_tp_scale {
 	WMI_TP_SCALE_SIZE   = 5,	/* max num of enum     */
 };
 
-struct wmi_set_channel_cmd {
-	/* channel (only frequency and mode info are used) */
-	struct wmi_channel chan;
-} __packed;
-
 struct wmi_pdev_chanlist_update_event {
 	/* number of channels */
 	__le32 num_chan;
@@ -2951,6 +2785,10 @@ enum {
 struct wmi_pdev_set_channel_cmd {
 	/* idnore power , only use flags , mode and freq */
 	struct wmi_channel chan;
+} __packed;
+
+struct wmi_pdev_pktlog_enable_cmd {
+	__le32 ev_bitmap;
 } __packed;
 
 /* Customize the DSCP (bit) to TID (0-7) mapping for QOS */
@@ -3187,7 +3025,7 @@ struct wmi_stats_event {
  * PDEV statistics
  * TODO: add all PDEV stats here
  */
-struct wmi_pdev_stats_old {
+struct wmi_pdev_stats {
 	__le32 chan_nf;        /* Channel noise floor */
 	__le32 tx_frame_count; /* TX frame count */
 	__le32 rx_frame_count; /* RX frame count */
@@ -3198,15 +3036,8 @@ struct wmi_pdev_stats_old {
 	struct wal_dbg_stats wal; /* WAL dbg stats */
 } __packed;
 
-struct wmi_pdev_stats_10x {
-	__le32 chan_nf;        /* Channel noise floor */
-	__le32 tx_frame_count; /* TX frame count */
-	__le32 rx_frame_count; /* RX frame count */
-	__le32 rx_clear_count; /* rx clear count */
-	__le32 cycle_count;    /* cycle count */
-	__le32 phy_err_count;  /* Phy error count */
-	__le32 chan_tx_pwr;    /* channel tx power */
-	struct wal_dbg_stats wal; /* WAL dbg stats */
+struct wmi_10x_pdev_stats {
+	struct wmi_pdev_stats old;
 	__le32 ack_rx_bad;
 	__le32 rts_bad;
 	__le32 rts_good;
@@ -3227,16 +3058,14 @@ struct wmi_vdev_stats {
  * peer statistics.
  * TODO: add more stats
  */
-struct wmi_peer_stats_old {
+struct wmi_peer_stats {
 	struct wmi_mac_addr peer_macaddr;
 	__le32 peer_rssi;
 	__le32 peer_tx_rate;
 } __packed;
 
-struct wmi_peer_stats_10x {
-	struct wmi_mac_addr peer_macaddr;
-	__le32 peer_rssi;
-	__le32 peer_tx_rate;
+struct wmi_10x_peer_stats {
+	struct wmi_peer_stats old;
 	__le32 peer_rx_rate;
 } __packed;
 
@@ -4293,7 +4122,6 @@ struct wmi_tbtt_offset_event {
 	__le32 tbttoffset_list[WMI_MAX_AP_VDEV];
 } __packed;
 
-
 struct wmi_peer_create_cmd {
 	__le32 vdev_id;
 	struct wmi_mac_addr peer_macaddr;
@@ -4730,8 +4558,26 @@ struct wmi_dbglog_cfg_cmd {
 /* By default disable power save for IBSS */
 #define ATH10K_DEFAULT_ATIM 0
 
+#define WMI_MAX_MEM_REQS 16
+
+struct wmi_svc_rdy_ev_arg {
+	__le32 min_tx_power;
+	__le32 max_tx_power;
+	__le32 ht_cap;
+	__le32 vht_cap;
+	__le32 sw_ver0;
+	__le32 sw_ver1;
+	__le32 phy_capab;
+	__le32 num_rf_chains;
+	__le32 eeprom_rd;
+	__le32 num_mem_reqs;
+	const __le32 *service_map;
+	const struct wlan_host_mem_req *mem_reqs[WMI_MAX_MEM_REQS];
+};
+
 struct ath10k;
 struct ath10k_vif;
+struct ath10k_fw_stats;
 
 int ath10k_wmi_attach(struct ath10k *ar);
 void ath10k_wmi_detach(struct ath10k *ar);
@@ -4739,8 +4585,10 @@ int ath10k_wmi_wait_for_service_ready(struct ath10k *ar);
 int ath10k_wmi_wait_for_unified_ready(struct ath10k *ar);
 
 int ath10k_wmi_connect(struct ath10k *ar);
-int ath10k_wmi_pdev_set_channel(struct ath10k *ar,
-				const struct wmi_channel_arg *);
+
+struct sk_buff *ath10k_wmi_alloc_skb(struct ath10k *ar, u32 len);
+int ath10k_wmi_cmd_send(struct ath10k *ar, struct sk_buff *skb, u32 cmd_id);
+
 int ath10k_wmi_pdev_suspend_target(struct ath10k *ar, u32 suspend_opt);
 int ath10k_wmi_pdev_resume_target(struct ath10k *ar);
 int ath10k_wmi_pdev_set_regdomain(struct ath10k *ar, u16 rd, u16 rd2g,
@@ -4774,11 +4622,11 @@ int ath10k_wmi_vdev_spectral_conf(struct ath10k *ar,
 int ath10k_wmi_vdev_spectral_enable(struct ath10k *ar, u32 vdev_id, u32 trigger,
 				    u32 enable);
 int ath10k_wmi_peer_create(struct ath10k *ar, u32 vdev_id,
-		    const u8 peer_addr[ETH_ALEN]);
+			   const u8 peer_addr[ETH_ALEN]);
 int ath10k_wmi_peer_delete(struct ath10k *ar, u32 vdev_id,
-		    const u8 peer_addr[ETH_ALEN]);
+			   const u8 peer_addr[ETH_ALEN]);
 int ath10k_wmi_peer_flush(struct ath10k *ar, u32 vdev_id,
-		   const u8 peer_addr[ETH_ALEN], u32 tid_bitmap);
+			  const u8 peer_addr[ETH_ALEN], u32 tid_bitmap);
 int ath10k_wmi_peer_set_param(struct ath10k *ar, u32 vdev_id,
 			      const u8 *peer_addr,
 			      enum wmi_peer_param param_id, u32 param_value);
@@ -4795,11 +4643,15 @@ int ath10k_wmi_scan_chan_list(struct ath10k *ar,
 			      const struct wmi_scan_chan_list_arg *arg);
 int ath10k_wmi_beacon_send_ref_nowait(struct ath10k_vif *arvif);
 int ath10k_wmi_pdev_set_wmm_params(struct ath10k *ar,
-			const struct wmi_pdev_set_wmm_params_arg *arg);
+				   const struct wmi_pdev_set_wmm_params_arg *arg);
 int ath10k_wmi_request_stats(struct ath10k *ar, enum wmi_stats_id stats_id);
 int ath10k_wmi_force_fw_hang(struct ath10k *ar,
 			     enum wmi_force_fw_hang_type type, u32 delay_ms);
 int ath10k_wmi_mgmt_tx(struct ath10k *ar, struct sk_buff *skb);
 int ath10k_wmi_dbglog_cfg(struct ath10k *ar, u32 module_enable);
+int ath10k_wmi_pull_fw_stats(struct ath10k *ar, struct sk_buff *skb,
+			     struct ath10k_fw_stats *stats);
+int ath10k_wmi_pdev_pktlog_enable(struct ath10k *ar, u32 ev_list);
+int ath10k_wmi_pdev_pktlog_disable(struct ath10k *ar);
 
 #endif /* _WMI_H_ */

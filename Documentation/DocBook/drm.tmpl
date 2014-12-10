@@ -953,6 +953,11 @@ int max_width, max_height;</synopsis>
       </listitem>
     </itemizedlist>
     <sect2>
+      <title>Display Modes Function Reference</title>
+!Iinclude/drm/drm_modes.h
+!Edrivers/gpu/drm/drm_modes.c
+    </sect2>
+    <sect2>
       <title>Frame Buffer Creation</title>
       <synopsis>struct drm_framebuffer *(*fb_create)(struct drm_device *dev,
 				     struct drm_file *file_priv,
@@ -1130,8 +1135,11 @@ int max_width, max_height;</synopsis>
             This operation is called with the mode config lock held.
           </para>
           <note><para>
-            FIXME: How should set_config interact with DPMS? If the CRTC is
-            suspended, should it be resumed?
+	    Note that the drm core has no notion of restoring the mode setting
+	    state after resume, since all resume handling is in the full
+	    responsibility of the driver. The common mode setting helper library
+	    though provides a helper which can be used for this:
+	    <function>drm_helper_resume_force_mode</function>.
           </para></note>
         </sect4>
         <sect4>
@@ -1463,7 +1471,7 @@ int max_width, max_height;</synopsis>
           The connector is then registered with a call to
           <function>drm_connector_init</function> with a pointer to the connector
           functions and a connector type, and exposed through sysfs with a call to
-          <function>drm_sysfs_connector_add</function>.
+          <function>drm_connector_register</function>.
         </para>
         <para>
           Supported connector types are
@@ -1621,7 +1629,7 @@ int max_width, max_height;</synopsis>
 	(<function>drm_encoder_cleanup</function>) and connectors
 	(<function>drm_connector_cleanup</function>). Furthermore, connectors
 	that have been added to sysfs must be removed by a call to
-	<function>drm_sysfs_connector_remove</function> before calling
+	<function>drm_connector_unregister</function> before calling
 	<function>drm_connector_cleanup</function>.
       </para>
       <para>
@@ -1666,7 +1674,7 @@ void intel_crt_init(struct drm_device *dev)
 	drm_encoder_helper_add(&intel_output->enc, &intel_crt_helper_funcs);
 	drm_connector_helper_add(connector, &intel_crt_connector_helper_funcs);
 
-	drm_sysfs_connector_add(connector);
+	drm_connector_register(connector);
 }]]></programlisting>
       <para>
         In the example above (taken from the i915 driver), a CRTC, connector and
@@ -1790,8 +1798,8 @@ void intel_crt_init(struct drm_device *dev)
           <para>
             The function filters out modes larger than
             <parameter>max_width</parameter> and <parameter>max_height</parameter>
-            if specified. It then calls the connector
-            <methodname>mode_valid</methodname> helper operation for  each mode in
+            if specified. It then calls the optional connector
+            <methodname>mode_valid</methodname> helper operation for each mode in
             the probed list to check whether the mode is valid for the connector.
           </para>
         </listitem>
@@ -2152,7 +2160,7 @@ void intel_crt_init(struct drm_device *dev)
           <para>
             Verify whether a mode is valid for the connector. Return MODE_OK for
             supported modes and one of the enum drm_mode_status values (MODE_*)
-            for unsupported modes. This operation is mandatory.
+            for unsupported modes. This operation is optional.
           </para>
           <para>
             As the mode rejection reason is currently not used beside for
@@ -2172,6 +2180,11 @@ void intel_crt_init(struct drm_device *dev)
     <sect2>
       <title>Modeset Helper Functions Reference</title>
 !Edrivers/gpu/drm/drm_crtc_helper.c
+    </sect2>
+    <sect2>
+      <title>Output Probing Helper Functions Reference</title>
+!Pdrivers/gpu/drm/drm_probe_helper.c output probing helper overview
+!Edrivers/gpu/drm/drm_probe_helper.c
     </sect2>
     <sect2>
       <title>fbdev Helper Functions Reference</title>

@@ -1201,8 +1201,6 @@ static int vpfe_start_streaming(struct vb2_queue *vq, unsigned int count)
 	unsigned long addr;
 	int ret;
 
-	if (count == 0)
-		return -ENOBUFS;
 	ret = mutex_lock_interruptible(&video->lock);
 	if (ret)
 		goto streamoff;
@@ -1244,7 +1242,7 @@ static int vpfe_buffer_init(struct vb2_buffer *vb)
 }
 
 /* abort streaming and wait for last buffer */
-static int vpfe_stop_streaming(struct vb2_queue *vq)
+static void vpfe_stop_streaming(struct vb2_queue *vq)
 {
 	struct vpfe_fh *fh = vb2_get_drv_priv(vq);
 	struct vpfe_video_device *video = fh->video;
@@ -1258,7 +1256,6 @@ static int vpfe_stop_streaming(struct vb2_queue *vq)
 		list_del(&video->next_frm->list);
 		vb2_buffer_done(&video->next_frm->vb, VB2_BUF_STATE_ERROR);
 	}
-	return 0;
 }
 
 static void vpfe_buf_cleanup(struct vb2_buffer *vb)
@@ -1327,6 +1324,7 @@ static int vpfe_reqbufs(struct file *file, void *priv,
 	q->type = req_buf->type;
 	q->io_modes = VB2_MMAP | VB2_USERPTR;
 	q->drv_priv = fh;
+	q->min_buffers_needed = 1;
 	q->ops = &video_qops;
 	q->mem_ops = &vb2_dma_contig_memops;
 	q->buf_struct_size = sizeof(struct vpfe_cap_buffer);

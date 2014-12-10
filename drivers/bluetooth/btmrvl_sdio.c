@@ -128,6 +128,14 @@ static const struct btmrvl_sdio_device btmrvl_sdio_sd8797 = {
 	.sd_blksz_fw_dl	= 256,
 };
 
+static const struct btmrvl_sdio_device btmrvl_sdio_sd8887 = {
+	.helper		= NULL,
+	.firmware	= "mrvl/sd8887_bt_a2.bin",
+	.reg		= &btmrvl_reg_8887,
+	.support_pscan_win_report = true,
+	.sd_blksz_fw_dl	= 256,
+};
+
 static const struct btmrvl_sdio_device btmrvl_sdio_sd8897 = {
 	.helper		= NULL,
 	.firmware	= "mrvl/sd8897_uapsta.bin",

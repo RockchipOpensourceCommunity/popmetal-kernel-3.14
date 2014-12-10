@@ -16,6 +16,7 @@
 #include <drm/drm_crtc_helper.h>
 #include <drm/drm_panel.h>
 #include <drm/drm_of.h>
+#include <drm/drm_dp_helper.h>
 
 #include <linux/component.h>
 #include <linux/clk.h>
@@ -375,13 +376,6 @@ static int rockchip_edp_commit(struct drm_encoder *encoder)
 		return ret;
 	}
 
-	ret = drm_dp_link_probe(&edp->aux, &edp->link);
-	if (ret < 0) {
-		dev_err(edp->dev, "failed to probe eDP link: %d\n",
-			ret);
-		return ret;
-	}
-
 	ret = drm_dp_link_power_up(&edp->aux, &edp->link);
 	if (ret < 0) {
 		dev_err(edp->dev, "failed to power up eDP link: %d\n",
@@ -468,7 +462,7 @@ rockchip_connector_detect(struct drm_connector *connector, bool force)
 
 static void rockchip_connector_destroy(struct drm_connector *connector)
 {
-	drm_sysfs_connector_remove(connector);
+	drm_connector_unregister(connector);
 	drm_connector_cleanup(connector);
 }
 
@@ -495,17 +489,8 @@ static struct drm_encoder *
 	return &edp->encoder;
 }
 
-static enum drm_mode_status rockchip_connector_mode_valid(
-		struct drm_connector *connector,
-		struct drm_display_mode *mode)
-{
-	/* TODO(rk): verify that the mode is really valid */
-	return MODE_OK;
-}
-
 static struct drm_connector_helper_funcs rockchip_connector_helper_funcs = {
 	.get_modes = rockchip_connector_get_modes,
-	.mode_valid = rockchip_connector_mode_valid,
 	.best_encoder = rockchip_connector_best_encoder,
 };
 
@@ -741,9 +726,9 @@ static int rockchip_edp_bind(struct device *dev, struct device *master,
 	drm_connector_helper_add(connector,
 				 &rockchip_connector_helper_funcs);
 
-	ret = drm_sysfs_connector_add(connector);
+	ret = drm_connector_register(connector);
 	if (ret) {
-		DRM_ERROR("failed to add drm_sysfs\n");
+		DRM_ERROR("failed to register connector\n");
 		goto err_free_connector;
 	}
 
@@ -759,10 +744,18 @@ static int rockchip_edp_bind(struct device *dev, struct device *master,
 		goto err_free_connector_sysfs;
 	}
 
+	ret = drm_dp_aux_register_i2c_bus(&edp->aux);
+	if (ret) {
+		DRM_ERROR("failed to register i2c\n");
+		goto err_panel_detach;
+	}
+
 	return 0;
 
+err_panel_detach:
+	drm_panel_detach(edp->panel);
 err_free_connector_sysfs:
-	drm_sysfs_connector_remove(connector);
+	drm_connector_unregister(connector);
 err_free_connector:
 	drm_connector_cleanup(connector);
 err_free_encoder:
@@ -783,7 +776,7 @@ static void rockchip_edp_unbind(struct device *dev, struct device *master,
 
 	rockchip_drm_encoder_dpms(encoder, DRM_MODE_DPMS_OFF);
 	encoder->funcs->destroy(encoder);
-	drm_sysfs_connector_remove(&edp->connector);
+	drm_connector_unregister(&edp->connector);
 	drm_connector_cleanup(&edp->connector);
 	drm_encoder_cleanup(encoder);
 }
@@ -826,6 +819,7 @@ static int rockchip_edp_probe(struct platform_device *pdev)
 	edp->dev = dev;
 	edp->panel = panel;
 	edp->aux.transfer = rockchip_dpaux_transfer;
+	edp->aux.dev = dev;
 	platform_set_drvdata(pdev, edp);
 
 	return component_add(dev, &rockchip_edp_component_ops);
