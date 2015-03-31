@@ -86,6 +86,7 @@ struct rockchip_pll_rate_table rk3288_pll_rates[] = {
 	RK3066_PLL_RATE( 600000000, 1, 50, 2),
 	RK3066_PLL_RATE_BWADJ(594000000, 1, 198, 8, 1),
 	RK3066_PLL_RATE( 552000000, 1, 46, 2),
+	RK3066_PLL_RATE( 532500000, 8, 355, 2),
 	RK3066_PLL_RATE( 504000000, 1, 84, 4),
 	RK3066_PLL_RATE( 500000000, 3, 125, 2),
 	RK3066_PLL_RATE( 456000000, 1, 76, 4),
@@ -93,6 +94,7 @@ struct rockchip_pll_rate_table rk3288_pll_rates[] = {
 	RK3066_PLL_RATE( 400000000, 3, 100, 2),
 	RK3066_PLL_RATE( 384000000, 2, 128, 4),
 	RK3066_PLL_RATE( 360000000, 1, 60, 4),
+	RK3066_PLL_RATE( 355000000, 1, 60, 4),
 	RK3066_PLL_RATE( 312000000, 1, 52, 4),
 	RK3066_PLL_RATE( 300000000, 1, 50, 4),
 	RK3066_PLL_RATE( 297000000, 2, 198, 8),
@@ -102,6 +104,19 @@ struct rockchip_pll_rate_table rk3288_pll_rates[] = {
 	RK3066_PLL_RATE( 126000000, 1, 84, 16),
 	RK3066_PLL_RATE(  48000000, 1, 64, 32),
 	{ /* sentinel */ },
+};
+#if 0
+struct rockchip_pll_rate_table rk3288_cpll_rates[] = {
+	RK3066_PLL_RATE( 639000000, 1, 213, 8),
+	RK3066_PLL_RATE( 390000000, 1, 130, 8),
+};
+#endif
+
+struct rockchip_pll_rate_table rk3288_npll_rates[] = {
+	RK3066_PLL_RATE( 639000000, 1, 213, 8),
+//	RK3066_PLL_RATE_BWADJ( 426000000, 1, 142, 8, 1),
+	RK3066_PLL_RATE( 390000000, 1, 130, 8),
+	//RK3066_PLL_RATE_BWADJ( 390000000, 1, 130, 4, 1),
 };
 
 #define RK3288_DIV_ACLK_CORE_M0_MASK	0xf
@@ -167,7 +182,6 @@ static const struct rockchip_cpuclk_reg_data rk3288_cpuclk_data = {
 	.div_core_mask = 0x1f,
 	.mux_core_shift = 15,
 };
-
 PNAME(mux_pll_p)		= { "xin24m", "xin32k" };
 PNAME(mux_armclk_p)		= { "apll_core", "gpll_core" };
 PNAME(mux_ddrphy_p)		= { "dpll_ddr", "gpll_ddr" };
@@ -202,7 +216,7 @@ PNAME(mux_hsicphy12m_p)		= { "hsicphy12m_xin12m", "hsicphy12m_usbphy" };
 
 static struct rockchip_pll_clock rk3288_pll_clks[] __initdata = {
 	[apll] = PLL(pll_rk3066, PLL_APLL, "apll", mux_pll_p, 0, RK3288_PLL_CON(0),
-		     RK3288_MODE_CON, 0, 6, 0, rk3288_pll_rates),
+		     RK3288_MODE_CON, 0, 6, ROCKCHIP_PLL_SYNC_RATE, rk3288_pll_rates),
 	[dpll] = PLL(pll_rk3066, PLL_DPLL, "dpll", mux_pll_p, 0, RK3288_PLL_CON(4),
 		     RK3288_MODE_CON, 4, 5, 0, NULL),
 	[cpll] = PLL(pll_rk3066, PLL_CPLL, "cpll", mux_pll_p, 0, RK3288_PLL_CON(8),
