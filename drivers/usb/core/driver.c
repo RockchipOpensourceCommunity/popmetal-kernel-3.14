@@ -1508,6 +1508,7 @@ EXPORT_SYMBOL_GPL(usb_disable_autosuspend);
  */
 void usb_autosuspend_device(struct usb_device *udev)
 {
+#if 0
 	int	status;
 
 	usb_mark_last_busy(udev);
@@ -1515,6 +1516,7 @@ void usb_autosuspend_device(struct usb_device *udev)
 	dev_vdbg(&udev->dev, "%s: cnt %d -> %d\n",
 			__func__, atomic_read(&udev->dev.power.usage_count),
 			status);
+#endif
 }
 
 /**
