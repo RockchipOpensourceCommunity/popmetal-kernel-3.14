@@ -135,9 +135,9 @@ rockchip_user_fb_create(struct drm_device *dev, struct drm_file *file_priv,
 			width * drm_format_plane_cpp(mode_cmd->pixel_format, i);
 
 		if (obj->size < min_size) {
-			drm_gem_object_unreference_unlocked(obj);
-			ret = -EINVAL;
-			goto err_gem_object_unreference;
+//			drm_gem_object_unreference_unlocked(obj);
+//			ret = -EINVAL;
+//			goto err_gem_object_unreference;
 		}
 		objs[i] = obj;
 	}

@@ -3301,14 +3301,14 @@ int drm_mode_addfb(struct drm_device *dev,
 	r.pixel_format = drm_mode_legacy_fb_format(or->bpp, or->depth);
 	r.handles[0] = or->handle;
 
-	if (!drm_core_check_feature(dev, DRIVER_MODESET))
-		return -EINVAL;
+	if (!drm_core_check_feature(dev, DRIVER_MODESET));
+	//	return -EINVAL;
 
-	if ((config->min_width > r.width) || (r.width > config->max_width))
-		return -EINVAL;
+	if ((config->min_width > r.width) || (r.width > config->max_width));
+	//	return -EINVAL;
 
-	if ((config->min_height > r.height) || (r.height > config->max_height))
-		return -EINVAL;
+	if ((config->min_height > r.height) || (r.height > config->max_height));
+	//	return -EINVAL;
 
 	fb = dev->mode_config.funcs->fb_create(dev, file_priv, &r);
 	if (IS_ERR(fb)) {

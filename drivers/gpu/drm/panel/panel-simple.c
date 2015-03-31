@@ -70,30 +70,27 @@ static int panel_simple_get_fixed_modes(struct panel_simple *panel)
 	struct drm_display_mode *mode;
 	unsigned int i, num = 0;
 
-printk("------->yzq %s %d \n",__func__,__LINE__);
 	if (!panel->desc)
 		return 0;
 
-printk("------->yzq %s %d \n",__func__,__LINE__);
 	for (i = 0; i < panel->desc->num_modes; i++) {
 		const struct drm_display_mode *m = &panel->desc->modes[i];
 
-printk("------->yzq %s %d \n",__func__,__LINE__);
 		mode = drm_mode_duplicate(drm, m);
+			dev_err(drm->dev, "failed to add mode %ux%u@%u\n",
+				m->hdisplay, m->vdisplay, m->vrefresh);
 		if (!mode) {
 			dev_err(drm->dev, "failed to add mode %ux%u@%u\n",
 				m->hdisplay, m->vdisplay, m->vrefresh);
 			continue;
 		}
 
-printk("------->yzq %s %d [%dx%d] \n",__func__,__LINE__,mode->hdisplay,mode->vdisplay);
 		drm_mode_set_name(mode);
 
 		drm_mode_probed_add(connector, mode);
 		num++;
 	}
 
-printk("------->yzq %s %d \n",__func__,__LINE__);
 	connector->display_info.bpc = panel->desc->bpc;
 	connector->display_info.width_mm = panel->desc->size.width;
 	connector->display_info.height_mm = panel->desc->size.height;
@@ -153,7 +150,6 @@ static int panel_simple_get_modes(struct drm_panel *panel)
 {
 	struct panel_simple *p = to_panel_simple(panel);
 	int num = 0;
-printk("------->yzq %s %d \n",__func__,__LINE__);
 	/* probe EDID if a DDC bus is available */
 	if (p->ddc) {
 		struct edid *edid = drm_get_edid(panel->connector, p->ddc);
@@ -164,7 +160,6 @@ printk("------->yzq %s %d \n",__func__,__LINE__);
 		}
 	}
 
-printk("------->yzq %s %d \n",__func__,__LINE__);
 	/* add hard-coded panel modes */
 	num += panel_simple_get_fixed_modes(p);
 
@@ -204,7 +199,7 @@ static int panel_simple_probe(struct device *dev, const struct panel_desc *desc)
 
 		panel->enable_gpio = NULL;
 	} else {
-		err = gpiod_direction_output(panel->enable_gpio, 0);
+	err = gpiod_direction_output(panel->enable_gpio, 0);
 		if (err < 0) {
 			dev_err(dev, "failed to setup GPIO: %d\n", err);
 			return err;
@@ -371,15 +366,15 @@ static const struct panel_desc chunghwa_claa101wb01 = {
 };
 
 static const struct drm_display_mode rockchip_vga_mode = {
-	.clock = 74250,
-	.hdisplay = 1280,
-	.hsync_start = 1280 + 220,
-	.hsync_end = 1280 + 220 + 40,
-	.htotal = 1280 + 220 + 40 + 110,
-	.vdisplay = 720,
-	.vsync_start = 720 + 20,
-	.vsync_end = 720 + 20 + 5,
-	.vtotal = 720 + 20 + 5 + 5,
+	.clock = 65000,
+	.hdisplay = 1024,
+	.hsync_start = 1024 + 160,
+	.hsync_end = 1024 + 160 + 136,
+	.htotal = 1024 + 160 + 136 + 24,
+	.vdisplay = 768,
+	.vsync_start = 768 + 29,
+	.vsync_end = 768 + 29 + 6,
+	.vtotal = 768 + 29 + 6 + 3,
 	.vrefresh = 60,
 };
 
@@ -390,6 +385,54 @@ static const struct panel_desc rockchip_vga = {
 	.size = {
 		.width = 1024,
 		.height = 768,
+	},
+};
+
+static const struct drm_display_mode rockchip_vga1_mode = {
+	.clock = 88750,
+	.hdisplay = 1440,
+	.hsync_start = 1440 + 48,
+	.hsync_end = 1440 + 48 + 32,
+	.htotal = 1440 + 48 + 32 + 80,
+	.vdisplay = 900,
+	.vsync_start = 900 + 3,
+	.vsync_end = 900 + 3 + 6,
+	.vtotal = 900 + 3 + 6 + 17,
+	.vrefresh = 60,
+	.flags = DRM_MODE_FLAG_NVSYNC | DRM_MODE_FLAG_PHSYNC,
+};
+
+static const struct panel_desc rockchip_vga1 = {
+	.modes = &rockchip_vga1_mode,
+	.num_modes = 1,
+	.bpc = 6,
+	.size = {
+		.width = 1440,
+		.height = 900,
+	},
+};
+
+
+static const struct drm_display_mode rockchip_lvds_b101ew05_mode = {
+	.clock = 71000,
+	.hdisplay = 1280,
+	.hsync_start = 1280 + 18,
+	.hsync_end = 1280 + 18 + 100,
+	.htotal = 1280 + 18 + 100 + 10,
+	.vdisplay = 800,
+	.vsync_start = 800 + 6,
+	.vsync_end = 800 + 6 + 8,
+	.vtotal = 800 + 6 + 8 + 2,
+	.vrefresh = 60,
+};
+
+static const struct panel_desc rockchip_lvds_b101ew05 = {
+	.modes = &rockchip_lvds_b101ew05_mode,
+	.num_modes = 1,
+	.bpc = 6,
+	.size = {
+		.width = 1280,
+		.height = 800,
 	},
 };
 
@@ -527,6 +570,14 @@ static const struct of_device_id platform_of_match[] = {
 	}, {
 		.compatible = "rockchip,vga",
 		.data = &rockchip_vga
+	}, {
+		.compatible = "rockchip,vgah",
+		.data = &rockchip_vga1
+	}, {
+		.compatible = "rockchip,b101ew05",
+		.data = &rockchip_lvds_b101ew05
+	}, {
+		.compatible = "edt,et057090dhu",
 	}, {
 		.compatible = "edt,et057090dhu",
 		.data = &edt_et057090dhu,

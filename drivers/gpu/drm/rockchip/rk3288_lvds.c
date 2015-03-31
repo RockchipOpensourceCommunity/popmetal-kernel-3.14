@@ -127,7 +127,6 @@ static void rk3288_lvds_poweron(struct drm_encoder *encoder)
 
 	if (lvds->panel)
 		lvds->panel->funcs->enable(lvds->panel);
-printk("---->yzq %s %d\n",__func__,__LINE__);
 	/* enable clk */
 	ret = clk_enable(lvds->pclk);
 	if (ret < 0) {
@@ -166,7 +165,6 @@ static void rk3288_lvds_poweroff(struct drm_encoder *encoder)
 static enum drm_connector_status
 rockchip_connector_detect(struct drm_connector *connector, bool force)
 {
-	printk("---->yzq %s %d\n",__func__,__LINE__);
 	return connector_status_connected;
 }
 
@@ -215,7 +213,6 @@ static struct drm_connector_helper_funcs rockchip_connector_helper_funcs = {
 static void rockchip_drm_encoder_dpms(struct drm_encoder *encoder, int mode)
 {
 	struct rk3288_lvds *lvds = encoder_to_lvds(encoder);
-	printk("---->yzq %s %d lvds->dpms=%d\n",__func__,__LINE__, mode);
 	mutex_lock(&lvds->suspend_lock);
 
 	switch (mode) {
@@ -233,7 +230,6 @@ static void rockchip_drm_encoder_dpms(struct drm_encoder *encoder, int mode)
 		break;
 	}
 
-	printk("---->yzq %s %d\n",__func__,__LINE__);
 	mutex_unlock(&lvds->suspend_lock);
 }
 
@@ -256,7 +252,6 @@ static void rockchip_drm_encoder_mode_set(struct drm_encoder *encoder,
 	u32 val;
 	int ret;
 
-	printk("---->yzq %s %d\n",__func__,__LINE__);
 	val = lvds->format;
 	if (lvds->output == DISPLAY_OUTPUT_DUAL_LVDS)
 		val |= LVDS_DUAL | LVDS_CH0_EN | LVDS_CH1_EN;
@@ -317,7 +312,6 @@ static void rockchip_drm_encoder_prepare(struct drm_encoder *encoder)
 	u32 val;
 	int ret;
 
-	printk("---->yzq %s %d\n",__func__,__LINE__);
 	ret = rockchip_drm_crtc_mode_config(encoder->crtc,
 						lvds->connector.connector_type,
 						ROCKCHIP_OUT_MODE_P888);
@@ -371,7 +365,6 @@ static struct drm_encoder_helper_funcs rockchip_encoder_helper_funcs = {
 
 static void rockchip_drm_encoder_destroy(struct drm_encoder *encoder)
 {
-	printk("---->yzq %s %d\n",__func__,__LINE__);
 	drm_encoder_cleanup(encoder);
 }
 
@@ -561,6 +554,9 @@ static int rk3288_lvds_probe(struct platform_device *pdev)
 		return PTR_ERR(lvds->grf);
 	}
 	regmap_write(lvds->grf, 0x380, 0x00100010);
+	regmap_write(lvds->grf, 0x1cc, 0x00ff00ff);
+//	regmap_write(lvds->grf, 0x1fc, 0xffffffff);
+//	regmap_write(lvds->grf, 0x1f8, 0xffffffff);
 
 	lvds->dev = dev;
 	lvds->panel = panel;

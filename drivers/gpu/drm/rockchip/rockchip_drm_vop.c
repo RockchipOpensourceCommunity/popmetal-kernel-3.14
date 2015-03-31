@@ -887,8 +887,8 @@ static int vop_crtc_mode_set(struct drm_crtc *crtc,
 	VOP_CTRL_SET(vop, out_mode, vop->connector_out_mode);
 
 	val = 0x8;
-	val |= (adjusted_mode->flags & DRM_MODE_FLAG_NHSYNC) ? 1 : 0;
-	val |= (adjusted_mode->flags & DRM_MODE_FLAG_NVSYNC) ? (1 << 1) : 0;
+	val |= (adjusted_mode->flags & DRM_MODE_FLAG_NHSYNC) ? 0 : 1;
+	val |= (adjusted_mode->flags & DRM_MODE_FLAG_NVSYNC) ? 0 : (1 << 1);
 	VOP_CTRL_SET(vop, pin_pol, val);
 
 	VOP_CTRL_SET(vop, htotal_pw, (htotal << 16) | hsync_len);
@@ -1132,6 +1132,7 @@ static int vop_create_crtc(struct vop *vop)
 
 	drm_crtc_helper_add(crtc, &vop_crtc_helper_funcs);
 
+#if 0
 	/*
 	 * Create drm_planes for overlay windows with possible_crtcs restricted
 	 * to the newly created crtc.
@@ -1155,6 +1156,7 @@ static int vop_create_crtc(struct vop *vop)
 			goto err_cleanup_crtc;
 		}
 	}
+#endif
 
 	port = of_get_child_by_name(dev->of_node, "port");
 	if (!port) {
