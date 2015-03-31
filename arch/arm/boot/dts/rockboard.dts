@@ -14,15 +14,14 @@
 #include "rk3288.dtsi"
 
 / {
-	model = "Google Pinky";
-	compatible = "google,veyron-pinky-rev2", "google,veyron-pinky",
-		     "google,veyron", "rockchip,rk3288";
+	model = "RockChip PopMetal";
+	compatible = "google,popmetal-beta", "rockchip,rk3288";
 
 	memory {
 		reg = <0x0 0x80000000>;
 	};
 
-	backlight {
+	backlight: backlight {
 		compatible = "pwm-backlight";
 		brightness-levels = <
 			  0   1   2   3   4   5   6   7
@@ -64,6 +63,14 @@
 		pwms = <&pwm0 0 1000000 0>;
 	};
 
+	panel: panel {
+		compatible ="rockchip,vgah","simple-panel";
+		status = "okay";
+		enable-gpios = <&gpio7 21 GPIO_ACTIVE_HIGH>;
+	//	ddc-i2c-bus = <&i2c2>;
+		backlight = <&backlight>;
+	};
+
 	gpio-keys {
 		compatible = "gpio-keys";
 		#address-cells = <1>;
@@ -79,7 +86,7 @@
 			linux,code = <KEY_POWER>;
 			debounce-interval = <100>;
 			gpio-key,wakeup;
-		};
+                };
 	};
 
 	gpio-charger {
@@ -315,6 +322,13 @@
 				regulator-ramp-delay = <2000>;
 			};
 
+			/*
+			 * vcc_18 has several aliases.  (vcc18_flashio and
+			 * vcc18_wl).  We'll add those aliases here just to
+			 * make it easier to follow the schematic.  The signals
+			 * are actually hooked together and only separated for
+			 * power measurement purposes).
+			 */
 			vcc_io: DCDC_REG4 {
 				regulator-always-on;
 				regulator-boot-on;
@@ -471,12 +485,41 @@
 	status = "okay";
 };
 
-&edp {
-	status = "disabled";
+&lvds {
+	status = "okay";
+	rockchip,panel = <&panel>;
+};
+
+&vopl {
+	status = "okay";
+};
+
+&vopl_mmu {
+	status = "okay";
+};
+
+&vopb {
+	status = "okay";
+};
+
+&vopb_mmu {
+	status = "okay";
 };
 
 &gpu {
 	status = "okay";
+};
+
+&hdmi {
+	status = "okay";
+};
+
+&i2s {
+	status = "okay";
+};
+
+&hdmi_audio {
+       status = "okay";
 };
 
 &pinctrl {
@@ -640,32 +683,4 @@
 &usb_otg {
 	dr_mode = "host";
 	status = "okay";
-};
-&fb0 {
-	rockchip,disp-mode = <DUAL>;
-	rockchip,uboot-logo-on = <0>;
-};
-
-&rk_screen0 {
-	status = "okay";
-};
-
-/*lcdc0 as PRMRY(LCD),lcdc1 as EXTEND(HDMI)*/
-&lcdc0 {
-	status = "okay";
-	rockchip,mirror = <NO_MIRROR>;
-	rockchip,iommu-enabled = <0>;
-};
-
-
-&lcdc1 {
-	status = "okay";
-	rockchip,mirror = <NO_MIRROR>;
-	rockchip,cabc_mode = <0>;
-	rockchip,iommu-enabled = <0>;
-};
-
-&hdmi {
-	status = "okay";
-	rockchips,hdmi_audio_source = <0>;
 };
