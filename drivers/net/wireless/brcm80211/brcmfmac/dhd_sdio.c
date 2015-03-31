@@ -4005,7 +4005,7 @@ struct brcmf_sdio *brcmf_sdio_probe(struct brcmf_sdio_dev *sdiodev)
 	ret = brcmf_bus_start(bus->sdiodev->dev);
 	if (ret != 0) {
 		brcmf_err("dongle is not responding\n");
-		goto fail;
+	//	goto fail;
 	}
 
 	return bus;
