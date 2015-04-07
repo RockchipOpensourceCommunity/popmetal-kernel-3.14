@@ -77,8 +77,6 @@ static int panel_simple_get_fixed_modes(struct panel_simple *panel)
 		const struct drm_display_mode *m = &panel->desc->modes[i];
 
 		mode = drm_mode_duplicate(drm, m);
-			dev_err(drm->dev, "failed to add mode %ux%u@%u\n",
-				m->hdisplay, m->vdisplay, m->vrefresh);
 		if (!mode) {
 			dev_err(drm->dev, "failed to add mode %ux%u@%u\n",
 				m->hdisplay, m->vdisplay, m->vrefresh);
