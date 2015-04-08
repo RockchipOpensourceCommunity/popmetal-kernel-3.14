@@ -121,6 +121,8 @@ static int rockchip_drm_fbdev_create(struct drm_fb_helper *helper,
 		      offset, size);
 
 	fbi->skip_vt_switch = true;
+	fb_prepare_logo(fbi, 0);
+	fb_show_logo(fbi, 0);
 
 	return 0;
 
