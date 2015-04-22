@@ -10,6 +10,7 @@
 #ifndef __IMX_HDMI_H__
 #define __IMX_HDMI_H__
 
+#define HDMI_EDID_LEN                           512
 /* Identification Registers */
 #define HDMI_DESIGN_ID                          0x0000
 #define HDMI_REVISION_ID                        0x0001
@@ -1078,6 +1079,88 @@ enum {
 	HDMI_A_VIDPOLCFG_HSYNCPOL_MASK = 0x2,
 	HDMI_A_VIDPOLCFG_HSYNCPOL_ACTIVE_HIGH = 0x2,
 	HDMI_A_VIDPOLCFG_HSYNCPOL_ACTIVE_LOW = 0x0,
+};
+
+struct hdmi_id {
+	u8 design;
+	u8 revision;
+
+	bool prepen;
+	bool audspdif;
+	bool audi2s;
+	bool hdmi14;
+	bool csc;
+	bool hdcp;
+	bool hdmi20;
+	bool confapb;
+	bool ahbauddma;
+	bool gpaud;
+	u8 phy_type;
+};
+
+struct hdmi_vmode {
+	bool mdvi;
+	bool has_audio;
+	bool mhsyncpolarity;
+	bool mvsyncpolarity;
+	bool minterlaced;
+	bool mdataenablepolarity;
+
+	unsigned int mpixelclock;
+	unsigned int mpixelrepetitioninput;
+	unsigned int mpixelrepetitionoutput;
+};
+
+struct hdmi_data_info {
+	unsigned int enc_in_format;
+	unsigned int enc_out_format;
+	unsigned int enc_color_depth;
+	unsigned int colorimetry;
+	unsigned int pix_repet_factor;
+	unsigned int hdcp_enable;
+	struct hdmi_vmode video_mode;
+};
+
+struct dw_hdmi {
+	struct drm_connector connector;
+	struct drm_encoder *encoder;
+	struct drm_bridge *bridge;
+
+	struct platform_device *ddc_pdev;
+	struct platform_device *audio_pdev;
+	enum dw_hdmi_devtype dev_type;
+	struct device *dev;
+	struct clk *isfr_clk;
+	struct clk *iahb_clk;
+
+	struct hdmi_id id;
+
+	struct hdmi_data_info hdmi_data;
+	const struct dw_hdmi_plat_data *plat_data;
+
+	int vic;
+
+	bool hpd_ignore;
+	u8 edid[HDMI_EDID_LEN];
+	bool cable_plugin;
+
+	bool phy_enabled;
+	struct drm_display_mode previous_mode;
+
+	struct regmap *regmap;
+	struct i2c_adapter ddc;
+	void __iomem *regs;
+
+	unsigned int sample_rate;
+
+	/* this mutex is used for audio clock control */
+	struct mutex audio_mutex;
+	bool audio_enable;
+
+	int ratio;
+
+	void (*write)(struct dw_hdmi *hdmi, u8 val, int offset);
+	u8 (*read)(struct dw_hdmi *hdmi, int offset);
 };
 
 #endif /* __IMX_HDMI_H__ */

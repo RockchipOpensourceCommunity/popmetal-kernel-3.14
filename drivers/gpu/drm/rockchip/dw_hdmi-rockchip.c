@@ -147,14 +147,31 @@ static const struct dw_hdmi_phy_config rockchip_phy_config[] = {
 	{ ~0UL,	     0x0000, 0x0000, 0x0000}
 };
 
+static void rockchip_hdmi_aux_ddc(struct rockchip_hdmi *hdmi)
+{
+	regmap_write(hdmi->regmap, 0x74, 0x30002000);
+	regmap_write(hdmi->regmap, 0x78, 0x00030002);
+}
+
 static int rockchip_hdmi_parse_dt(struct rockchip_hdmi *hdmi)
 {
 	struct device_node *np = hdmi->dev->of_node;
+	struct device_node *ddc_node;
 
 	hdmi->regmap = syscon_regmap_lookup_by_phandle(np, "rockchip,grf");
 	if (IS_ERR(hdmi->regmap)) {
 		dev_err(hdmi->dev, "Unable to get rockchip,grf\n");
 		return PTR_ERR(hdmi->regmap);
+	}
+
+	ddc_node = of_parse_phandle(np, "ddc-i2c-bus", 0);
+	if (ddc_node) {
+		dev_dbg(hdmi->dev, "take ddc from devicetree\n");
+		of_node_put(ddc_node);
+	} else {
+		dev_dbg(hdmi->dev, "take ddc from IP ddc module\n");
+		/* io aux, switch i2c to ddc function */
+		rockchip_hdmi_aux_ddc(hdmi);
 	}
 
 	return 0;

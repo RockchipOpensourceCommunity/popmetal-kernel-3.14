@@ -21,6 +21,16 @@ enum {
 
 struct dw_hdmi;
 
+struct dw_hdmi_ddc_data {
+	int irq;
+	struct dw_hdmi *dw;
+	struct i2c_adapter **i2c;
+
+	u8 (*read)(struct dw_hdmi *hdmi, int offset);
+	void (*write)(struct dw_hdmi *hdmi, u8 val, int offset);
+	void (*mod)(struct dw_hdmi *hdmi, u8 data, u8 mask, unsigned reg);
+};
+
 enum dw_hdmi_devtype {
 	IMX6Q_HDMI,
 	IMX6DL_HDMI,
@@ -68,6 +78,8 @@ struct dw_hdmi_plat_data {
 	enum drm_mode_status (*mode_valid)(struct drm_connector *connector,
 					   struct drm_display_mode *mode);
 };
+
+int dw_hdmi_ddc_register(struct dw_hdmi *hdmi);
 
 int dw_hdmi_resume(struct device *dev);
 int dw_hdmi_suspend(struct device *dev);

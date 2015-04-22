@@ -80,84 +80,6 @@ static const u16 csc_coeff_rgb_in_eitu709[3][4] = {
 	{ 0x6756, 0x78ab, 0x2000, 0x0200 }
 };
 
-struct hdmi_id {
-	u8 design;
-	u8 revision;
-
-	bool prepen;
-	bool audspdif;
-	bool audi2s;
-	bool hdmi14;
-	bool csc;
-	bool hdcp;
-	bool hdmi20;
-	bool confapb;
-	bool ahbauddma;
-	bool gpaud;
-	u8 phy_type;
-};
-
-struct hdmi_vmode {
-	bool mdvi;
-	bool has_audio;
-	bool mhsyncpolarity;
-	bool mvsyncpolarity;
-	bool minterlaced;
-	bool mdataenablepolarity;
-
-	unsigned int mpixelclock;
-	unsigned int mpixelrepetitioninput;
-	unsigned int mpixelrepetitionoutput;
-};
-
-struct hdmi_data_info {
-	unsigned int enc_in_format;
-	unsigned int enc_out_format;
-	unsigned int enc_color_depth;
-	unsigned int colorimetry;
-	unsigned int pix_repet_factor;
-	unsigned int hdcp_enable;
-	struct hdmi_vmode video_mode;
-};
-
-struct dw_hdmi {
-	struct drm_connector connector;
-	struct drm_encoder *encoder;
-	struct drm_bridge *bridge;
-
-	struct platform_device *audio_pdev;
-	enum dw_hdmi_devtype dev_type;
-	struct device *dev;
-	struct clk *isfr_clk;
-	struct clk *iahb_clk;
-
-	struct hdmi_id id;
-
-	struct hdmi_data_info hdmi_data;
-	const struct dw_hdmi_plat_data *plat_data;
-
-	int vic;
-
-	u8 edid[HDMI_EDID_LEN];
-	bool cable_plugin;
-
-	bool phy_enabled;
-	struct drm_display_mode previous_mode;
-
-	struct regmap *regmap;
-	struct i2c_adapter *ddc;
-	void __iomem *regs;
-
-	unsigned int sample_rate;
-	struct mutex audio_mutex;
-	bool audio_enable;
-
-	int ratio;
-
-	void (*write)(struct dw_hdmi *hdmi, u8 val, int offset);
-	u8 (*read)(struct dw_hdmi *hdmi, int offset);
-};
-
 static void dw_hdmi_writel(struct dw_hdmi *hdmi, u8 val, int offset)
 {
 	writel(val, hdmi->regs + (offset << 2));
@@ -1653,10 +1575,7 @@ static int dw_hdmi_connector_get_modes(struct drm_connector *connector)
 	struct edid *edid;
 	int ret;
 
-	if (!hdmi->ddc)
-		return 0;
-
-	edid = drm_get_edid(connector, hdmi->ddc);
+	edid = drm_get_edid(connector, &hdmi->ddc);
 	if (edid) {
 		dev_dbg(hdmi->dev, "got edid: width[%d] x height[%d]\n",
 			edid->width_cm, edid->height_cm);
@@ -1819,6 +1738,7 @@ int dw_hdmi_bind(struct device *dev, struct device *master,
 	struct device_node *np = dev->of_node;
 	struct device_node *ddc_node;
 	struct dw_hdmi *hdmi;
+	struct i2c_adapter *ddc;
 	int ret;
 	u32 val = 1;
 
@@ -1853,15 +1773,17 @@ int dw_hdmi_bind(struct device *dev, struct device *master,
 
 	ddc_node = of_parse_phandle(np, "ddc-i2c-bus", 0);
 	if (ddc_node) {
-		hdmi->ddc = of_find_i2c_adapter_by_node(ddc_node);
+		ddc = of_find_i2c_adapter_by_node(ddc_node);
 		of_node_put(ddc_node);
-		if (!hdmi->ddc) {
-			dev_dbg(hdmi->dev, "failed to read ddc node\n");
+
+		hdmi->ddc = *ddc;
+		if (!ddc) {
+			dev_err(hdmi->dev, "failed to read ddc node\n");
 			return -EPROBE_DEFER;
 		}
-
 	} else {
-		dev_dbg(hdmi->dev, "no ddc property found\n");
+		dw_hdmi_ddc_register(hdmi);
+		dev_dbg(hdmi->dev, "using dw_hdmi internal ddc\n");
 	}
 
 	ret = devm_request_threaded_irq(dev, irq, dw_hdmi_hardirq,
@@ -1934,6 +1856,7 @@ int dw_hdmi_bind(struct device *dev, struct device *master,
 
 	dev_set_drvdata(dev, hdmi);
 
+	/* creat dw_hdmi audio device */
 	memset(&pdevinfo, 0, sizeof(pdevinfo));
 	pdevinfo.parent = dev;
 	pdevinfo.id = PLATFORM_DEVID_NONE;
@@ -1978,7 +1901,7 @@ void dw_hdmi_unbind(struct device *dev, struct device *master, void *data)
 
 	clk_disable_unprepare(hdmi->iahb_clk);
 	clk_disable_unprepare(hdmi->isfr_clk);
-	i2c_put_adapter(hdmi->ddc);
+	i2c_put_adapter(&(hdmi->ddc));
 }
 EXPORT_SYMBOL_GPL(dw_hdmi_unbind);
 
