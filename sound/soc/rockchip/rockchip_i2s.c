@@ -63,17 +63,19 @@ static int i2s_runtime_resume(struct device *dev)
 
 	ret = clk_prepare_enable(i2s->mclk);
 	if (ret) {
-		dev_err(i2s->dev, "mclk enable failed %d\n", ret);
+		printk("mclk enable failed %d\n", ret);
 		return ret;
 	}
+	printk("cpu dai mclk enable success %d\n", ret);
 
 	if (i2s->oclk) {
 		ret = clk_prepare_enable(i2s->oclk);
 		if (ret) {
-			dev_err(i2s->dev, "oclk enable failed %d\n", ret);
+			printk("oclk enable failed %d\n", ret);
 			return ret;
 		}
 	}
+	printk("cpu dai oclk enable success %d\n", ret);
 
 	return 0;
 }
@@ -181,13 +183,17 @@ static int rockchip_i2s_set_fmt(struct snd_soc_dai *cpu_dai,
 	struct rk_i2s_dev *i2s = to_info(cpu_dai);
 	unsigned int mask = 0, val = 0;
 
+	printk("cpu dai set fmt %d\n", fmt);
+
 	mask = I2S_CKR_MSS_MASK;
 	switch (fmt & SND_SOC_DAIFMT_MASTER_MASK) {
 	case SND_SOC_DAIFMT_CBS_CFS:
+		printk("set cpu dai to master mode\n");
 		/* Set source clock in Master mode */
 		val = I2S_CKR_MSS_MASTER;
 		break;
 	case SND_SOC_DAIFMT_CBM_CFM:
+		printk("set cpu dai to slave mode\n");
 		val = I2S_CKR_MSS_SLAVE;
 		break;
 	default:
@@ -259,6 +265,10 @@ static int rockchip_i2s_hw_params(struct snd_pcm_substream *substream,
 
 	regmap_update_bits(i2s->regmap, I2S_TXCR, I2S_TXCR_VDW_MASK, val);
 	regmap_update_bits(i2s->regmap, I2S_RXCR, I2S_RXCR_VDW_MASK, val);
+	regmap_update_bits(i2s->regmap, I2S_DMACR, I2S_DMACR_TDL_MASK,
+			   I2S_DMACR_TDL(16));
+	regmap_update_bits(i2s->regmap, I2S_DMACR, I2S_DMACR_RDL_MASK,
+			   I2S_DMACR_RDL(16));
 
         /* DMA w/ 24 bytes to go to support DDRFreq */
 	regmap_update_bits(i2s->regmap, I2S_DMACR, I2S_DMACR_TDL_MASK,
@@ -308,7 +318,9 @@ static int rockchip_i2s_set_sysclk(struct snd_soc_dai *cpu_dai, int clk_id,
 
 	ret = clk_set_rate(i2s->mclk, freq);
 	if (ret)
-		dev_err(i2s->dev, "Fail to set mclk %d\n", ret);
+		printk("Fail to set mclk %d\n", ret);
+
+	printk("Success to set cpu dai mclk %d\n", freq);
 
 	return ret;
 }

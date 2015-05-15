@@ -8,3 +8,6 @@ snd-soc-rockchip-hdmi-audio-objs := rockchip_hdmi_audio.o
 
 obj-$(CONFIG_SND_SOC_ROCKCHIP_MAX98090) += snd-soc-rockchip-max98090.o
 obj-$(CONFIG_SND_SOC_ROCKCHIP_HDMI_AUDIO) += snd-soc-rockchip-hdmi-audio.o
+
+snd-soc-wm8960-objs := rockchip_wm8960.o
+obj-$(CONFIG_SND_SOC_ROCKCHIP_WM8960) += snd-soc-wm8960.o
