@@ -63,6 +63,14 @@
 		pwms = <&pwm0 0 1000000 0>;
 	};
 
+	sound {
+		compatible = "rockchip,rockchip-audio-wm8960";
+		rockchip,model = "ROCKCHIP-I2S";
+		rockchip,i2s-controller = <&i2s>;
+		rockchip,audio-codec = <&wm8960>;
+		status = "okay";
+	};
+
 	panel: panel {
 		compatible ="rockchip,vgah","simple-panel";
 		status = "okay";
@@ -429,7 +437,12 @@
 &i2c2 {
 	clock-frequency = <100000>;
 	status = "okay";
-	
+
+	wm8960: wm8960@1a {
+		compatible = "wm8960";
+		reg = <0x1a>;
+	};
+
 	vga: vga@50 {
                 compatible = "rockchip,vga";
 		pwr_gpio = <&gpio7 21 GPIO_ACTIVE_HIGH>;
@@ -516,10 +529,10 @@
 
 &i2s {
 	status = "okay";
-};
-
-&hdmi_audio {
-       status = "okay";
+	assigned-clock-parents = <&cru SCLK_I2S0>;
+	assigned-clocks = <&cru SCLK_I2S0>, <&cru SCLK_I2S0_OUT>;
+	clock-names = "i2s_hclk", "i2s_clk", "i2s_clk_out";
+	clocks = <&cru HCLK_I2S0>, <&cru SCLK_I2S0>, <&cru SCLK_I2S0_OUT>;
 };
 
 &pinctrl {

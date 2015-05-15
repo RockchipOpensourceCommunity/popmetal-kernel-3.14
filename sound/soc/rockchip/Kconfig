@@ -19,3 +19,12 @@ config SND_SOC_ROCKCHIP_MAX98090
 	help
 	  Say Y or M here if you want to add support for SoC audio on Rockchip
 	  boards using the MAX98090 codec, such as Veyron.
+
+config SND_SOC_ROCKCHIP_WM8960
+	tristate "ASoC support for Rockchip boards using a wm8960 codec"
+	depends on SND_SOC_ROCKCHIP
+	select SND_SOC_ROCKCHIP_I2S
+	select SND_SOC_WM8960
+	help
+	  Say Y if you want to add support for SoC audio on rockchip
+	  with the WM8960.
