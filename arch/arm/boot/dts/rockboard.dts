@@ -68,6 +68,8 @@
 		rockchip,model = "ROCKCHIP-I2S";
 		rockchip,i2s-controller = <&i2s>;
 		rockchip,audio-codec = <&wm8960>;
+		pinctrl-names = "default";
+		pinctrl-0 = <&spk_con>;
 		status = "okay";
 	};
 
@@ -659,6 +661,12 @@
 
 		usbotg_pwren_h: usbotg-pwren-h {
 			rockchip,pins = <0 12 RK_FUNC_GPIO &pcfg_pull_none>;
+		};
+	};
+
+	codec {
+		spk_con: spk-con {
+			rockchip,pins = <0 11 RK_FUNC_GPIO &pcfg_output_high>;
 		};
 	};
 };
