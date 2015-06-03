@@ -61,6 +61,7 @@ static int i2s_runtime_resume(struct device *dev)
 	struct rk_i2s_dev *i2s = dev_get_drvdata(dev);
 	int ret;
 
+	clk_set_rate(i2s->mclk,11289600);
 	ret = clk_prepare_enable(i2s->mclk);
 	if (ret) {
 		printk("mclk enable failed %d\n", ret);
