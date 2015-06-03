@@ -226,6 +226,7 @@
                 lcdc-supply = <&vcc_io>;
                 wifi-supply = <&vcc18>;
         };
+
   	sound {
 		compatible = "rockchip,rockchip-audio-wm8960";
 		rockchip,model = "ROCKCHIP-I2S";

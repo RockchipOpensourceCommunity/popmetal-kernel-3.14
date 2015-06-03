@@ -126,6 +126,10 @@
 /* Stereo DAC Digital Volume2(0x10) */
 #define RT5631_DAC_VOL_MASK				0xff
 
+/* Stereo ADC Digital Switch(0x12) */
+#define RT_L_MUTE				(0x1 << 15)
+#define RT_R_MUTE				(0x1 << 7)
+
 /* ADC Recording Mixer Control(0x14) */
 #define RT5631_M_OUTMIXER_L_TO_RECMIXER_L		(0x1 << 15)
 #define RT5631_M_OUTMIXL_RECMIXL_BIT			15
