@@ -214,11 +214,20 @@ PNAME(mux_usbphy480m_p)		= { "sclk_otgphy1", "sclk_otgphy2",
 PNAME(mux_hsicphy480m_p)	= { "cpll", "gpll", "usbphy480m_src" };
 PNAME(mux_hsicphy12m_p)		= { "hsicphy12m_xin12m", "hsicphy12m_usbphy" };
 
+static const struct rockchip_pll_rate_table rk3288_dpll_rates[] = {
+	RK3066_PLL_RATE(666000000, 9, 500, 2),
+	RK3066_PLL_RATE(533000000, 9, 400, 2),
+	RK3066_PLL_RATE(400000000, 1, 100, 6),
+	RK3066_PLL_RATE(333000000, 9, 250, 2),
+	RK3066_PLL_RATE(266000000, 9, 200, 2),
+	RK3066_PLL_RATE(200000000, 1, 50, 6),
+};
+
 static struct rockchip_pll_clock rk3288_pll_clks[] __initdata = {
 	[apll] = PLL(pll_rk3066, PLL_APLL, "apll", mux_pll_p, 0, RK3288_PLL_CON(0),
 		     RK3288_MODE_CON, 0, 6, ROCKCHIP_PLL_SYNC_RATE, rk3288_pll_rates),
-	[dpll] = PLL(pll_rk3066, PLL_DPLL, "dpll", mux_pll_p, 0, RK3288_PLL_CON(4),
-		     RK3288_MODE_CON, 4, 5, 0, NULL),
+	[dpll] = PLL(pll_rk3066, PLL_DPLL, "dpll", mux_pll_p, CLK_GET_RATE_NOCACHE,
+		     RK3288_PLL_CON(4), RK3288_MODE_CON, 4, 5, 0, rk3288_dpll_rates),
 	[cpll] = PLL(pll_rk3066, PLL_CPLL, "cpll", mux_pll_p, 0, RK3288_PLL_CON(8),
 		     RK3288_MODE_CON, 8, 7, ROCKCHIP_PLL_SYNC_RATE, rk3288_pll_rates),
 	[gpll] = PLL(pll_rk3066, PLL_GPLL, "gpll", mux_pll_p, 0, RK3288_PLL_CON(12),
@@ -829,6 +838,20 @@ static int rk3288_clk_suspend(void)
 		rk3288_saved_cru_regs[i] =
 				readl_relaxed(rk3288_cru_base + reg_id);
 	}
+
+	/*
+	 * Switch PLLs other than DPLL (for SDRAM) to slow mode to
+	 * avoid crashes on resume. The Mask ROM on the system will
+	 * put APLL, CPLL, and GPLL into slow mode at resume time
+	 * anyway (which is why we restore them), but we might not
+	 * even make it to the Mask ROM if this isn't done at suspend
+	 * time.
+	 *
+	 * NOTE: only APLL truly matters here, but we'll do them all.
+	 */
+
+	writel_relaxed(0xf3030000, rk3288_cru_base + RK3288_MODE_CON);
+
 	return 0;
 }
 
