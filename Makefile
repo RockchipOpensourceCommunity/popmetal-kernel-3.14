@@ -21,6 +21,7 @@ unexport LC_ALL
 LC_COLLATE=C
 LC_NUMERIC=C
 export LC_COLLATE LC_NUMERIC
+export WIFIVERSION=-3.8
 
 # Avoid interference with shell env settings
 unexport GREP_OPTIONS
