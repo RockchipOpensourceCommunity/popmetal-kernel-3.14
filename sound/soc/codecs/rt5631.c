@@ -90,11 +90,7 @@ static const struct reg_default rt5631_reg[] = {
 #define DEF_VOL_SPK				0xc9
 #endif
 
-snd_soc_update_bits(rt6531_codec, RT5631_STEREO_DAC_VOL_2,
-				RT5631_DAC_VOL_MASK,(DEF_VOL<<8) | DEF_VOL);
-
-
-
+//snd_soc_update_bits(rt6531_codec, RT5631_STEREO_DAC_VOL_2, RT5631_DAC_VOL_MASK,(DEF_VOL<<8) | DEF_VOL);
 
 struct delayed_work rt5631_delay_cap; //bard 7-16
 EXPORT_SYMBOL(rt5631_delay_cap); //bard 7-16
