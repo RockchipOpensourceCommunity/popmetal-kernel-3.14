@@ -296,9 +296,9 @@ static const struct vop_reg_data vop_init_reg_table[] = {
 	{DSP_CTRL0, 0x00000000},
 	{WIN0_CTRL0, 0x00000080},
 	{WIN1_CTRL0, 0x00000080},
-	/*
-	 * Todo: win2/3 support area func, but now havn't found a suitable
-	 * way to use it, so default enable area0 as a win display.
+	/* TODO: Win2/3 support multiple area function, but we haven't found
+	 * a suitable way to use it yet, so let's just use them as other windows
+	 * with only area 0 enabled.
 	 */
 	{WIN2_CTRL0, 0x00000010},
 	{WIN3_CTRL0, 0x00000010},
