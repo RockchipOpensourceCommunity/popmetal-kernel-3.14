@@ -214,10 +214,10 @@
                 wifi-supply = <&vcc18>;
         };
   sound {
-		compatible = "rockchip,rockchip-audio-rt5631";
+		compatible = "rockchip,rockchip-audio-wm8960";
 		rockchip,model = "ROCKCHIP-I2S";
 		rockchip,i2s-controller = <&i2s>;
-		rockchip,audio-codec = <&rt5631>;
+		rockchip,audio-codec = <&wm8960>;
 		status = "okay";
 	};
 };
@@ -446,20 +446,22 @@
 &i2c2 {
 	clock-frequency = <100000>;
 	status = "okay";
-  rt5631: rt5631@1a {
+  	rt5631: rt5631@1a {
 		compatible = "rt5631";
 		reg = <0x1a>;
+		status = "disabled";
 	};
 
 	wm8960: wm8960@1a {
 		compatible = "wm8960";
 		reg = <0x1a>;
+		status = "okay";
 	};
-
 	vga: vga@50 {
                 compatible = "rockchip,vga";
 		pwr_gpio = <&gpio7 21 GPIO_ACTIVE_HIGH>;
                 reg = <0x50>;
+		status = "disabled";
         };
 };
 
