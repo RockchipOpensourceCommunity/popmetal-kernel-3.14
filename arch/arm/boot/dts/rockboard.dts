@@ -612,7 +612,8 @@
 		};
 
 		usbotg_pwren_h: usbotg-pwren-h {
-			rockchip,pins = <0 12 RK_FUNC_GPIO &pcfg_pull_none>;
+			rockchip,pins = <0 12 RK_FUNC_GPIO &pcfg_pull_none>,
+					<7 3 RK_FUNC_GPIO &pcfg_pull_none>;
 		};
 	};
 
