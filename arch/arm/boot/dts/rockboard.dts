@@ -89,7 +89,7 @@
 		status = "okay";
 
 		pinctrl-names = "default";
-		pinctrl-0 = <&pwr_key_h &ap_lid_int_l>;
+		pinctrl-0 = <&pwr_key_h>;
 		power {
 			label = "Power";
 			gpios = <&gpio0 5 GPIO_ACTIVE_HIGH>;
@@ -97,22 +97,6 @@
 			debounce-interval = <100>;
 			gpio-key,wakeup;
                 };
-	};
-
-	gpio-charger {
-		compatible = "gpio-charger";
-		gpios = <&gpio0 8 GPIO_ACTIVE_HIGH>;
-		pinctrl-names = "default";
-		pinctrl-0 = <&ac_present_ap>;
-		charger-type = "mains";
-	};
-
-	gpio-restart {
-		compatible = "gpio-restart";
-		gpios = <&gpio0 13 GPIO_ACTIVE_HIGH>;
-		pinctrl-names = "default";
-		pinctrl-0 = <&ap_warm_reset_h>;
-		priority = /bits/ 8 <200>;
 	};
 
 	/* A non-regulated voltage from power supply or battery */
@@ -213,7 +197,7 @@
                 lcdc-supply = <&vcc_io>;
                 wifi-supply = <&vcc18>;
         };
-  sound {
+  	sound {
 		compatible = "rockchip,rockchip-audio-wm8960";
 		rockchip,model = "ROCKCHIP-I2S";
 		rockchip,i2s-controller = <&i2s>;
@@ -457,12 +441,6 @@
 		reg = <0x1a>;
 		status = "okay";
 	};
-	vga: vga@50 {
-                compatible = "rockchip,vga";
-		pwr_gpio = <&gpio7 21 GPIO_ACTIVE_HIGH>;
-                reg = <0x50>;
-		status = "disabled";
-        };
 };
 
 &i2c3 {
@@ -472,17 +450,6 @@
 &i2c4 {
 	clock-frequency = <400000>;
 	status = "okay";
-
-	trackpad@15 {
-		compatible = "elan,i2c_touchpad";
-		interrupt-parent = <&gpio7>;
-		interrupts = <3 IRQ_TYPE_EDGE_FALLING>;
-		pinctrl-names = "default";
-		pinctrl-0 = <&trackpad_int>;
-		reg = <0x15>;
-		vcc-supply = <&vcc33_io>;
-		wakeup-source;
-	};
 };
 
 &i2c5 {
@@ -576,22 +543,6 @@
 		pwr_key_h: pwr-key-h {
 			rockchip,pins = <0 5 RK_FUNC_GPIO &pcfg_pull_none>;
 		};
-
-		ap_lid_int_l: ap-lid-int-l {
-			rockchip,pins = <0 6 RK_FUNC_GPIO &pcfg_pull_up>;
-		};
-	};
-
-	charger {
-		ac_present_ap: ac-present-ap {
-			rockchip,pins = <0 8 RK_FUNC_GPIO &pcfg_pull_up>;
-		};
-	};
-
-	cros-ec {
-		ec_int: ec-int {
-			rockchip,pins = <7 7 RK_FUNC_GPIO &pcfg_pull_none>;
-		};
 	};
 
 	emmc {
@@ -604,12 +555,6 @@
 	pmic {
 		pmic_int_l: pmic-int-l {
 			rockchip,pins = <RK_GPIO0 4 RK_FUNC_GPIO &pcfg_pull_up>;
-		};
-	};
-
-	reboot {
-		ap_warm_reset_h: ap-warm-reset-h {
-			rockchip,pins = <RK_GPIO0 13 RK_FUNC_GPIO &pcfg_pull_none>;
 		};
 	};
 
@@ -658,12 +603,6 @@
 	tpm {
 		tpm_int_h: tpm-int-h {
 			rockchip,pins = <7 4 RK_FUNC_GPIO &pcfg_pull_none>;
-		};
-	};
-
-	trackpad {
-		trackpad_int: trackpad-int {
-			rockchip,pins = <7 3 RK_FUNC_GPIO &pcfg_pull_up>;
 		};
 	};
 
