@@ -169,6 +169,18 @@
 		regulator-boot-on;
 	};
 
+	/* This turns on vbus for sata */
+	vcc_sata: sata-regulator {
+		compatible = "regulator-fixed";
+		enable-active-high;
+		pinctrl-names = "default";
+		pinctrl-0 = <&sata_reset>;
+		gpio = <&gpio7 12 GPIO_ACTIVE_HIGH>;
+		regulator-name = "sata_pwr";
+		regulator-always-on;
+		regulator-boot-on;
+	};
+
 	/* This turns on vbus for otg for host mode (dwc2) */
 	vcc5v_otg: vcc5v-otg-regulator {
 		compatible = "regulator-fixed";
@@ -611,6 +623,9 @@
 			rockchip,pins = <0 14 RK_FUNC_GPIO &pcfg_pull_none>;
 		};
 
+		sata_reset: sata-reset {
+			rockchip,pins = <0 13 RK_FUNC_GPIO &pcfg_pull_up>;
+		};
 		usbotg_pwren_h: usbotg-pwren-h {
 			rockchip,pins = <0 12 RK_FUNC_GPIO &pcfg_pull_none>,
 					<7 3 RK_FUNC_GPIO &pcfg_pull_none>;
