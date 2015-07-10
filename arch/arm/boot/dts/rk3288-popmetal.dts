@@ -576,6 +576,10 @@
 	status = "okay";
 };
 
+&hdmi_audio {
+	status = "okay";
+};
+
 &gmac {
         phy-supply = <&vcc_lan>;
         phy-mode = "rgmii";
