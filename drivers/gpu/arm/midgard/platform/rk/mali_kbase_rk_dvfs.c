@@ -26,10 +26,10 @@ struct kbase_rk_dvfs_threshold {
 static const struct kbase_rk_dvfs_threshold kbase_rk_dvfs_threshold_table[] = {
 	{ 600000000, 20, 100 },
 	/* { 500000000, 20, 40 }, - See crosbug.com/p/33857 */
-	{ 400000000, 20, 40 },
-	{ 300000000, 20, 40 },
-	{ 200000000, 20, 40 },
-	{ 100000000, 0, 50 },
+	{ 400000000, 15, 20 },
+	{ 300000000, 10, 15 },
+	{ 200000000, 5, 10 },
+	{ 100000000, 0, 5 },
 };
 
 #define work_to_dvfs(w) container_of(w, struct kbase_rk_dvfs, work)
