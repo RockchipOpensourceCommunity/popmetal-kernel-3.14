@@ -446,6 +446,30 @@ static const struct panel_desc chunghwa_claa101wb01 = {
 	},
 };
 
+static const struct drm_display_mode rockchip_vga_mode = {
+	.clock = 65000,
+	.hdisplay = 1024,
+	.hsync_start = 1024 + 160,
+	.hsync_end = 1024 + 160 + 136,
+	.htotal = 1024 + 160 + 136 + 24,
+	.vdisplay = 768,
+	.vsync_start = 768 + 29,
+	.vsync_end = 768 + 29 + 6,
+	.vtotal = 768 + 29 + 6 + 3,
+	.vrefresh = 60,
+	.flags = DRM_MODE_FLAG_NVSYNC | DRM_MODE_FLAG_NHSYNC,
+};
+
+static const struct panel_desc rockchip_vga = {
+	.modes = &rockchip_vga_mode,
+	.num_modes = 1,
+	.bpc = 6,
+	.size = {
+		.width = 1024,
+		.height = 768,
+	},
+};
+
 static const struct drm_display_mode cmn_n116bgeea2_mode = {
 	.clock = 76420,
 	.hdisplay = 1366,
@@ -580,6 +604,9 @@ static const struct of_device_id platform_of_match[] = {
 	}, {
 		.compatible = "cnm,n116bgeea2",
 		.data = &cmn_n116bgeea2
+	}, {
+		.compatible = "rockchip,vga",
+		.data = &rockchip_vga
 	}, {
 		.compatible = "edt,et057090dhu",
 		.data = &edt_et057090dhu,
