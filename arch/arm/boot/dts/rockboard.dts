@@ -92,7 +92,7 @@
 		pinctrl-0 = <&pwr_key_h>;
 		power {
 			label = "Power";
-			gpios = <&gpio0 5 GPIO_ACTIVE_HIGH>;
+			gpios = <&gpio0 5 GPIO_ACTIVE_LOW>;
 			linux,code = <KEY_POWER>;
 			debounce-interval = <100>;
 			gpio-key,wakeup;
