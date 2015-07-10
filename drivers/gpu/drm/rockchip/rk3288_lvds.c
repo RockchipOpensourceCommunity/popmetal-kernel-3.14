@@ -61,12 +61,14 @@ struct rk3288_lvds {
 
 	int output;
 	int format;
-	
+
 	struct drm_device *drm_dev;
 	struct drm_panel *panel;
 	struct drm_connector connector;
 	struct drm_encoder encoder;
-	int dpms;
+
+	struct mutex suspend_lock;
+	int suspend;
 };
 
 static inline void lvds_writel(struct rk3288_lvds *lvds, u32 offset, u32 val)
@@ -124,7 +126,7 @@ static void rk3288_lvds_poweron(struct drm_encoder *encoder)
 	int ret;
 
 	if (lvds->panel)
-		lvds->panel->funcs->enable(lvds->panel);
+		drm_panel_prepare(lvds->panel);
 
 	/* enable clk */
 	ret = clk_enable(lvds->pclk);
@@ -132,11 +134,15 @@ static void rk3288_lvds_poweron(struct drm_encoder *encoder)
 		dev_err(lvds->dev, "failed to enable lvds pclk %d\n", ret);
 		return;
 	}
-	
+
 	/* enable pll */
 	writel(0x00, lvds->regs + LVDS_CFG_REG_C);
 	/* enable tx*/
 	writel(0x92, lvds->regs + LVDS_CFG_REG_21);
+
+	if (lvds->panel)
+		drm_panel_enable(lvds->panel);
+	lvds->suspend = false;
 }
 
 static void rk3288_lvds_poweroff(struct drm_encoder *encoder)
@@ -148,15 +154,19 @@ static void rk3288_lvds_poweroff(struct drm_encoder *encoder)
 	if (ret != 0)
 		dev_err(lvds->dev, "Could not write to GRF: %d\n", ret);
 
+	if (lvds->panel)
+		drm_panel_disable(lvds->panel);
+
 	/*disable tx*/
 	writel(0x00, lvds->regs + LVDS_CFG_REG_21);
 	/*disable pll*/
 	writel(0xff, lvds->regs + LVDS_CFG_REG_C);
 
-	if (lvds->panel)
-		lvds->panel->funcs->disable(lvds->panel);
-	
 	clk_disable(lvds->pclk);
+
+	if (lvds->panel)
+		drm_panel_unprepare(lvds->panel);
+	lvds->suspend = true;
 }
 
 static enum drm_connector_status
@@ -210,24 +220,23 @@ static struct drm_connector_helper_funcs rockchip_connector_helper_funcs = {
 static void rockchip_drm_encoder_dpms(struct drm_encoder *encoder, int mode)
 {
 	struct rk3288_lvds *lvds = encoder_to_lvds(encoder);
-
-	if (lvds->dpms == mode)
-		return;
-
+	mutex_lock(&lvds->suspend_lock);
 	switch (mode) {
 	case DRM_MODE_DPMS_ON:
-		rk3288_lvds_poweron(encoder);
+		if (lvds->suspend)
+			rk3288_lvds_poweron(encoder);
 		break;
 	case DRM_MODE_DPMS_STANDBY:
 	case DRM_MODE_DPMS_SUSPEND:
 	case DRM_MODE_DPMS_OFF:
-		rk3288_lvds_poweroff(encoder);
+		if (!lvds->suspend)
+			rk3288_lvds_poweroff(encoder);
 		break;
 	default:
 		break;
 	}
 
-	lvds->dpms = mode;
+	mutex_unlock(&lvds->suspend_lock);
 }
 
 static bool
@@ -309,13 +318,8 @@ static void rockchip_drm_encoder_prepare(struct drm_encoder *encoder)
 	u32 val;
 	int ret;
 
-	ret = rockchip_drm_crtc_enable_out_mode(encoder->crtc,
-						lvds->connector.connector_type,
-						ROCKCHIP_OUT_MODE_P888);
-	if (ret < 0) {
-		dev_err(lvds->dev, "Could not set crtc mode config: %d.\n", ret);
-		return;
-	}
+	rockchip_drm_crtc_mode_config(encoder->crtc, lvds->connector.connector_type,
+				      ROCKCHIP_OUT_MODE_P888);
 
 	ret = rockchip_drm_encoder_get_mux_id(lvds->dev->of_node, encoder);
 	if (ret < 0)
@@ -449,6 +453,9 @@ static int rk3288_lvds_bind(struct device *dev, struct device *master,
 		goto err_free_connector_sysfs;
 	}
 
+	mutex_init(&lvds->suspend_lock);
+	lvds->suspend = true;
+
 	return 0;
 
 err_free_connector_sysfs:
@@ -516,6 +523,12 @@ static int rk3288_lvds_probe(struct platform_device *pdev)
 	if (!lvds)
 		return -ENOMEM;
 
+	lvds->grf = syscon_regmap_lookup_by_phandle(dev->of_node, "rockchip,grf");
+	if (IS_ERR(lvds->grf)) {
+		dev_err(dev, "needs rockchip,grf property\n");
+		return PTR_ERR(lvds->grf);
+	}
+
 	if (of_property_read_string(dev->of_node, "rockchip,output", &name))
 		/* default set it as output rgb */
 		lvds->output = DISPLAY_OUTPUT_RGB;
@@ -541,6 +554,8 @@ static int rk3288_lvds_probe(struct platform_device *pdev)
 			return -EINVAL;
 		}
 	}
+	regmap_write(lvds->grf, 0x380, 0x00100010);
+	regmap_write(lvds->grf, 0x1cc, 0x00ff00ff);
 
 	lvds->dev = dev;
 	lvds->panel = panel;
