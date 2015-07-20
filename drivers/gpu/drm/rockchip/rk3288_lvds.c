@@ -172,7 +172,11 @@ static void rk3288_lvds_poweroff(struct drm_encoder *encoder)
 static enum drm_connector_status
 rockchip_connector_detect(struct drm_connector *connector, bool force)
 {
-	return connector_status_connected;
+	struct rk3288_lvds *lvds = connector_to_lvds(connector);
+	struct drm_panel *panel = lvds->panel;
+
+	return panel->funcs->detect(panel) ? connector_status_connected :
+					     connector_status_disconnected;
 }
 
 static void rockchip_connector_destroy(struct drm_connector *connector)
@@ -421,7 +425,8 @@ static int rk3288_lvds_bind(struct device *dev, struct device *master,
 	drm_encoder_helper_add(encoder, &rockchip_encoder_helper_funcs);
 
 	connector = &lvds->connector;
-	connector->polled = DRM_CONNECTOR_POLL_HPD;
+	connector->polled = DRM_CONNECTOR_POLL_CONNECT |
+			    DRM_CONNECTOR_POLL_DISCONNECT;
 	connector->dpms = DRM_MODE_DPMS_OFF;
 
 	ret = drm_connector_init(drm_dev, connector,
