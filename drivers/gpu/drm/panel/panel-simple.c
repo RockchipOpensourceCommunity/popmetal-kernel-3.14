@@ -200,6 +200,20 @@ static int panel_simple_enable(struct drm_panel *panel)
 	return 0;
 }
 
+static int panel_simple_detect(struct drm_panel *panel)
+{
+	struct panel_simple *p = to_panel_simple(panel);
+
+	if (p->ddc) {
+		if (drm_probe_ddc(p->ddc))
+			return true;
+		else
+			return false;
+	}
+
+	return true;
+}
+
 static int panel_simple_get_modes(struct drm_panel *panel)
 {
 	struct panel_simple *p = to_panel_simple(panel);
@@ -226,6 +240,7 @@ static const struct drm_panel_funcs panel_simple_funcs = {
 	.unprepare = panel_simple_unprepare,
 	.prepare = panel_simple_prepare,
 	.enable = panel_simple_enable,
+	.detect = panel_simple_detect,
 	.get_modes = panel_simple_get_modes,
 };
 

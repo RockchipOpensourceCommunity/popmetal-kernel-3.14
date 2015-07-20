@@ -67,6 +67,7 @@ struct drm_panel_funcs {
 	int (*unprepare)(struct drm_panel *panel);
 	int (*prepare)(struct drm_panel *panel);
 	int (*enable)(struct drm_panel *panel);
+	int (*detect)(struct drm_panel *panel);
 	int (*get_modes)(struct drm_panel *panel);
 };
 
