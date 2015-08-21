@@ -547,6 +547,10 @@
 	status = "okay";
 };
 
+&uart3 {
+	status = "okay";
+};
+
 &lvds {
 	status = "okay";
 	rockchip,panel = <&panel>;
