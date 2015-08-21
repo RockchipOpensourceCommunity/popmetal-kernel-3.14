@@ -736,3 +736,7 @@
 	dr_mode = "host";
 	status = "okay";
 };
+
+&tsadc {
+	status = "okay";
+};
