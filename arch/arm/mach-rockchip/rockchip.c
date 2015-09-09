@@ -18,6 +18,9 @@
 #include <linux/kernel.h>
 #include <linux/init.h>
 #include <linux/of_platform.h>
+#include <linux/of_fdt.h>
+#include <linux/of.h>
+#include <linux/of_address.h>
 #include <linux/irqchip.h>
 #include <linux/memblock.h>
 #include <asm/mach/arch.h>
@@ -34,9 +37,23 @@ static void __init rockchip_dt_init(void)
 	platform_device_register_simple("cpufreq-cpu0", 0, NULL, 0);
 }
 
+extern struct ion_platform_data ion_pdata;
+extern void __init ion_reserve(struct ion_platform_data *data);
+extern int __init rockchip_ion_find_heap(unsigned long node,
+				const char *uname, int depth, void *data);
+void __init rockchip_ion_reserve(void)
+{
+#ifdef CONFIG_ION_ROCKCHIP
+	printk("%s\n", __func__);
+	of_scan_flat_dt(rockchip_ion_find_heap, (void*)&ion_pdata);
+	ion_reserve(&ion_pdata);
+#endif
+}
 static void __init rockchip_memory_init(void)
 {
 	memblock_reserve(0xfe000000, 0x1000000);
+	/* reserve memory for ION */
+	rockchip_ion_reserve();
 }
 
 static const char * const rockchip_board_dt_compat[] = {
