@@ -16,30 +16,6 @@
 #define KBASE_RK_GPU_FREQ_KHZ_MAX               600000
 #define KBASE_RK_GPU_FREQ_KHZ_MIN               100000
 
-#define KBASE_RK_JS_HARD_STOP_TICKS_SS		16
-/* 800ms before hard-stop a job */
-#define KBASE_RK_JS_RESET_TICKS_SS		20
-/* 1s before reseting the GPU */
-
-#define KBASE_RK_JS_SCHEDULING_TICK_NS_DEBUG    15000000u
-/* 15ms, an aggressive tick for testing purposes.
- * This will reduce performance significantly
- */
-#define KBASE_RK_JS_SOFT_STOP_TICKS_DEBUG       1
-/* between 15ms and 30ms before soft-stop a job */
-#define KBASE_RK_JS_HARD_STOP_TICKS_SS_DEBUG    333
-/* 5s before hard-stop */
-#define KBASE_RK_JS_HARD_STOP_TICKS_NSS_DEBUG   100000
-/* 1500s (25mins) before NSS hard-stop */
-#define KBASE_RK_JS_RESET_TICKS_SS_DEBUG        500
-/* 45s before resetting GPU, for a certain GLES2 test at
- * 128x128 (bound by combined vertex+tiler job)
- */
-#define KBASE_RK_JS_RESET_TICKS_NSS_DEBUG       100166
-/* 1502s before resetting GPU */
-#define KBASE_RK_JS_RESET_TIMEOUT_MS            500
-/* 3s before cancelling stuck jobs */
-
 struct kbase_rk_fv {
 	unsigned long freq;
 	unsigned long volt;

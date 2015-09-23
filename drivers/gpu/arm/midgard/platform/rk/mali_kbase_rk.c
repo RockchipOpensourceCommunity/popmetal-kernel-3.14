@@ -124,16 +124,19 @@ static void kbase_rk_power_off_callback(struct kbase_device *kbdev)
 	}
 }
 
-static mali_error kbase_rk_power_runtime_init_callback(
+static int kbase_rk_power_runtime_init_callback(
 		struct kbase_device *kbdev)
 {
+	if (!kbdev->regulator)
+		return -ENODEV;
+
 	pm_runtime_set_autosuspend_delay(kbdev->dev, 200);
 	pm_runtime_use_autosuspend(kbdev->dev);
 
 	pm_runtime_set_active(kbdev->dev);
 	pm_runtime_enable(kbdev->dev);
 
-	return MALI_ERROR_NONE;
+	return 0;
 }
 
 static void kbase_rk_power_runtime_term_callback(
@@ -142,7 +145,7 @@ static void kbase_rk_power_runtime_term_callback(
 	pm_runtime_disable(kbdev->dev);
 }
 
-static kbase_pm_callback_conf kbase_rk_pm_callbacks = {
+struct kbase_pm_callback_conf kbase_rk_pm_callbacks = {
 	.power_on_callback = kbase_rk_power_on_callback,
 	.power_off_callback = kbase_rk_power_off_callback,
 
@@ -150,7 +153,7 @@ static kbase_pm_callback_conf kbase_rk_pm_callbacks = {
 	.power_runtime_term_callback = kbase_rk_power_runtime_term_callback,
 	.power_runtime_on_callback = kbase_rk_rt_power_on_callback,
 	.power_runtime_off_callback = kbase_rk_rt_power_off_callback,
-	.power_runtime_idle_callback = kbase_rk_rt_idle_callback,
+	//.power_runtime_idle_callback = kbase_rk_rt_idle_callback,
 };
 
 int kbase_platform_early_init(void)
@@ -565,7 +568,6 @@ static int kbase_rk_platform_init(struct kbase_device *kbdev)
 	int ret;
 
 	kbase_rk = devm_kzalloc(kbdev->dev, sizeof(*kbase_rk), GFP_KERNEL);
-
 	if (!kbase_rk)
 		return -ENOMEM;
 
@@ -625,63 +627,14 @@ static void kbase_rk_platform_term(struct kbase_device *kbdev)
 	kbdev->platform_context = NULL;
 }
 
-kbase_platform_funcs_conf kbase_rk_platform_funcs = {
+struct kbase_platform_funcs_conf kbase_rk_platform_funcs = {
 	.platform_init_func = kbase_rk_platform_init,
 	.platform_term_func = kbase_rk_platform_term,
 };
 
-static kbase_attribute kbase_rk_config_attributes[] = {
-	{
-	 KBASE_CONFIG_ATTR_POWER_MANAGEMENT_CALLBACKS,
-	 (uintptr_t)&kbase_rk_pm_callbacks
-	}, {
-	 KBASE_CONFIG_ATTR_PLATFORM_FUNCS,
-	 (uintptr_t) &kbase_rk_platform_funcs
-	},
-#ifndef CONFIG_MALI_DEBUG
-	{
-	 KBASE_CONFIG_ATTR_JS_HARD_STOP_TICKS_SS,
-	 KBASE_RK_JS_HARD_STOP_TICKS_SS
-	}, {
-	 KBASE_CONFIG_ATTR_JS_RESET_TICKS_SS,
-	 KBASE_RK_JS_RESET_TICKS_SS
-	},
-#else
-	/* Use more aggressive scheduling timeouts in debug builds. */
-	{
-	 KBASE_CONFIG_ATTR_JS_SCHEDULING_TICK_NS,
-	 KBASE_RK_JS_SCHEDULING_TICK_NS_DEBUG
-	}, {
-	 KBASE_CONFIG_ATTR_JS_SOFT_STOP_TICKS,
-	 KBASE_RK_JS_SOFT_STOP_TICKS_DEBUG
-	}, {
-	 KBASE_CONFIG_ATTR_JS_HARD_STOP_TICKS_SS,
-	 KBASE_RK_JS_HARD_STOP_TICKS_SS_DEBUG
-	}, {
-	 KBASE_CONFIG_ATTR_JS_HARD_STOP_TICKS_NSS,
-	 KBASE_RK_JS_HARD_STOP_TICKS_NSS_DEBUG
-	}, {
-	 KBASE_CONFIG_ATTR_JS_RESET_TICKS_SS,
-	 KBASE_RK_JS_RESET_TICKS_SS_DEBUG
-	}, {
-	 KBASE_CONFIG_ATTR_JS_RESET_TICKS_NSS,
-	 KBASE_RK_JS_RESET_TICKS_NSS_DEBUG
-	},
-#endif /* CONFIG_MALI_DEBUG */
-	{
-	 KBASE_CONFIG_ATTR_JS_RESET_TIMEOUT_MS,
-	 KBASE_RK_JS_RESET_TIMEOUT_MS
-	}, {
-	 KBASE_CONFIG_ATTR_END,
-	 0
-	}
-};
+static struct kbase_platform_config kbase_rk_platform_config;
 
-static kbase_platform_config kbase_rk_platform_config = {
-	.attributes = kbase_rk_config_attributes,
-};
-
-kbase_platform_config *kbase_get_platform_config(void)
+struct kbase_platform_config *kbase_get_platform_config(void)
 {
 	return &kbase_rk_platform_config;
 }
