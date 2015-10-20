@@ -29,6 +29,25 @@
 #include "core.h"
 #include "pm.h"
 
+#define SYS_LOADER_REBOOT_FLAG   0x5242C300  //high 24 bits is tag, low 8 bits is type
+#define SYS_KERNRL_REBOOT_FLAG   0xC3524200  //high 24 bits is tag, low 8 bits is type
+
+enum {
+    BOOT_NORMAL = 0, /* normal boot */
+    BOOT_LOADER,     /* enter loader rockusb mode */
+    BOOT_MASKROM,    /* enter maskrom rockusb mode (not support now) */
+    BOOT_RECOVER,    /* enter recover */
+    BOOT_NORECOVER,  /* do not enter recover */
+    BOOT_SECONDOS,   /* boot second OS (not support now)*/
+    BOOT_WIPEDATA,   /* enter recover and wipe data. */
+    BOOT_WIPEALL,    /* enter recover and wipe all data. */
+    BOOT_CHECKIMG,   /* check firmware img with backup part(in loader mode)*/
+    BOOT_FASTBOOT,   /* enter fast boot mode */
+    BOOT_SECUREBOOT_DISABLE,
+    BOOT_CHARGING,   /* enter charge mode */
+    BOOT_MAX         /* MAX VALID BOOT TYPE.*/
+};
+
 static void __init rockchip_dt_init(void)
 {
 	l2x0_of_init(0, ~0UL);
@@ -56,6 +75,45 @@ static void __init rockchip_memory_init(void)
 	rockchip_ion_reserve();
 }
 
+void rockchip_restart_get_boot_mode(const char *cmd, u32 *flag, u32 *mode)
+{
+	*flag = SYS_LOADER_REBOOT_FLAG + BOOT_NORMAL;
+	*mode = BOOT_MODE_REBOOT;
+
+	if (cmd) {
+		if (!strcmp(cmd, "loader") || !strcmp(cmd, "bootloader"))
+			*flag = SYS_LOADER_REBOOT_FLAG + BOOT_LOADER;
+		else if(!strcmp(cmd, "recovery"))
+			*flag = SYS_LOADER_REBOOT_FLAG + BOOT_RECOVER;
+		else if (!strcmp(cmd, "fastboot"))
+			*flag = SYS_LOADER_REBOOT_FLAG + BOOT_FASTBOOT;
+		else if (!strcmp(cmd, "charge")) {
+			*flag = SYS_LOADER_REBOOT_FLAG + BOOT_CHARGING;
+			*mode = BOOT_MODE_CHARGE;
+		}
+	} else {
+		if (is_panic)
+			*mode = BOOT_MODE_PANIC;
+	}
+}
+
+static void rockchip_restart(char mode, const char *cmd)
+{
+	u32 boot_flag, boot_mode;
+
+	rockchip_restart_get_boot_mode(cmd, &boot_flag, &boot_mode);
+
+	writel_relaxed(boot_flag, RK_PMU_VIRT + RK3288_PMU_SYS_REG0);	// for loader
+	writel_relaxed(boot_mode, RK_PMU_VIRT + RK3288_PMU_SYS_REG1);	// for linux
+	dsb();
+
+	/* pll enter slow mode */
+	writel_relaxed(0xf3030000, RK_CRU_VIRT + RK3288_CRU_MODE_CON);
+	dsb();
+	writel_relaxed(0xeca8, RK_CRU_VIRT + RK3288_CRU_GLB_SRST_SND_VALUE);
+	dsb();
+}
+
 static const char * const rockchip_board_dt_compat[] = {
 	"rockchip,rk2928",
 	"rockchip,rk3066a",
@@ -69,4 +127,5 @@ DT_MACHINE_START(ROCKCHIP_DT, "Rockchip (Device Tree)")
 	.init_machine	= rockchip_dt_init,
 	.dt_compat	= rockchip_board_dt_compat,
 	.reserve        = rockchip_memory_init,
+	.restart	= rockchip_restart,
 MACHINE_END
