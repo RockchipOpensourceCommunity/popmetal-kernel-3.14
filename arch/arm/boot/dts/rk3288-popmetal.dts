@@ -606,6 +606,9 @@
 	assigned-clocks = <&cru SCLK_I2S0>, <&cru SCLK_I2S0_OUT>;
 	clock-names = "i2s_hclk", "i2s_clk", "i2s_clk_out";
 	clocks = <&cru HCLK_I2S0>, <&cru SCLK_I2S0>, <&cru SCLK_I2S0_OUT>;
+
+	assigned-clocks = <&cru SCLK_I2S0>,  <&cru SCLK_I2S0_PRE>, <&cru SCLK_I2S0_SRC>;
+	assigned-clock-parents = <&cru SCLK_I2S0_PRE>, <&cru SCLK_I2S0_FRAC>, <&cru PLL_GPLL>;
 };
 
 &pinctrl {
