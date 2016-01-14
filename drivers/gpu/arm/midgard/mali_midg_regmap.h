@@ -15,10 +15,11 @@
 
 
 
-
-
 #ifndef _MIDGARD_REGMAP_H_
 #define _MIDGARD_REGMAP_H_
+
+#include "mali_midg_coherency.h"
+#include "mali_kbase_gpu_id.h"
 
 /*
  * Begin Register Offsets
@@ -441,39 +442,6 @@
 /* Outer coherent, write alloc inner */
 #define AS_MEMATTR_INDEX_OUTER_WA              4
 
-/* GPU_ID register */
-#define GPU_ID_VERSION_STATUS_SHIFT       0
-#define GPU_ID_VERSION_MINOR_SHIFT        4
-#define GPU_ID_VERSION_MAJOR_SHIFT        12
-#define GPU_ID_VERSION_PRODUCT_ID_SHIFT   16
-#define GPU_ID_VERSION_STATUS             (0xF  << GPU_ID_VERSION_STATUS_SHIFT)
-#define GPU_ID_VERSION_MINOR              (0xFF << GPU_ID_VERSION_MINOR_SHIFT)
-#define GPU_ID_VERSION_MAJOR              (0xF  << GPU_ID_VERSION_MAJOR_SHIFT)
-#define GPU_ID_VERSION_PRODUCT_ID         (0xFFFF << GPU_ID_VERSION_PRODUCT_ID_SHIFT)
-
-/* Values for GPU_ID_VERSION_PRODUCT_ID bitfield */
-#define GPU_ID_PI_T60X                    0x6956
-#define GPU_ID_PI_T62X                    0x0620
-#define GPU_ID_PI_T76X                    0x0750
-#define GPU_ID_PI_T72X                    0x0720
-#define GPU_ID_PI_TFRX                    0x0880
-#define GPU_ID_PI_T86X                    0x0860
-#define GPU_ID_PI_T82X                    0x0820
-#define GPU_ID_PI_T83X                    0x0830
-
-/* Values for GPU_ID_VERSION_STATUS field for PRODUCT_ID GPU_ID_PI_T60X */
-#define GPU_ID_S_15DEV0                   0x1
-#define GPU_ID_S_EAC                      0x2
-
-/* Helper macro to create a GPU_ID assuming valid values for id, major, minor, status */
-#define GPU_ID_MAKE(id, major, minor, status) \
-		(((id) << GPU_ID_VERSION_PRODUCT_ID_SHIFT) | \
-		((major) << GPU_ID_VERSION_MAJOR_SHIFT) |   \
-		((minor) << GPU_ID_VERSION_MINOR_SHIFT) |   \
-		((status) << GPU_ID_VERSION_STATUS_SHIFT))
-
-/* End GPU_ID register */
-
 /* JS<n>_FEATURES register */
 
 #define JS_FEATURE_NULL_JOB              (1u << 1)
@@ -520,19 +488,14 @@
 
 /* End THREAD_* registers */
 
-/* COHERENCY_* values*/
-#define COHERENCY_ACE_LITE 0
-#define COHERENCY_ACE      1
-#define COHERENCY_NONE     31
-#define COHERENCY_FEATURE_BIT(x) (1 << (x))
-/* End COHERENCY_* values */
-
 /* SHADER_CONFIG register */
 
 #define SC_ALT_COUNTERS             (1ul << 3)
 #define SC_OVERRIDE_FWD_PIXEL_KILL  (1ul << 4)
 #define SC_SDC_DISABLE_OQ_DISCARD   (1ul << 6)
+#define SC_LS_ALLOW_ATTR_TYPES      (1ul << 16)
 #define SC_LS_PAUSEBUFFER_DISABLE   (1ul << 16)
+#define SC_LS_ATTR_CHECK_DISABLE    (1ul << 18)
 #define SC_ENABLE_TEXGRD_FLAGS      (1ul << 25)
 /* End SHADER_CONFIG register */
 

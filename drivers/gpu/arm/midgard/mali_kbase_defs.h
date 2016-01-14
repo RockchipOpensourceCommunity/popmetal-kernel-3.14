@@ -38,6 +38,7 @@
 #include <linux/atomic.h>
 #include <linux/mempool.h>
 #include <linux/slab.h>
+#include <linux/file.h>
 
 #ifdef CONFIG_MALI_FPGA_BUS_LOGGER
 #include <linux/bus_logger.h>
@@ -143,6 +144,8 @@
 #else
 #define MIDGARD_MMU_TOPLEVEL    1
 #endif
+
+#define MIDGARD_MMU_BOTTOMLEVEL 3
 
 #define GROWABLE_FLAGS_REQUIRED (KBASE_REG_PF_GROW | KBASE_REG_GPU_WR)
 
@@ -386,6 +389,9 @@ struct kbase_jd_atom {
 	/* Pointer to atom that has cross-slot dependency on this atom */
 	struct kbase_jd_atom *x_post_dep;
 
+	/* The GPU's flush count recorded at the time of submission, used for
+	 * the cache flush optimisation */
+	u32 flush_id;
 
 	struct kbase_jd_atom_backend backend;
 #ifdef CONFIG_DEBUG_FS
@@ -664,10 +670,11 @@ struct kbase_pm_device_data {
 	wait_queue_head_t zero_active_count_wait;
 
 	/**
-	 * A bit mask identifying the available shader cores that are specified
-	 * via sysfs
+	 * Bit masks identifying the available shader cores that are specified
+	 * via sysfs. One mask per job slot.
 	 */
-	u64 debug_core_mask;
+	u64 debug_core_mask[BASE_JM_MAX_NR_SLOTS];
+	u64 debug_core_mask_all;
 
 	/**
 	 * Lock protecting the power state of the device.
@@ -776,7 +783,6 @@ struct kbase_device {
 
 	struct list_head entry;
 	struct device *dev;
-	unsigned int kbase_group_error;
 	struct miscdevice mdev;
 	u64 reg_start;
 	size_t reg_size;
@@ -933,10 +939,6 @@ struct kbase_device {
 	struct list_head        kctx_list;
 	struct mutex            kctx_list_lock;
 
-#ifdef CONFIG_MALI_MIDGARD_RT_PM
-	struct delayed_work runtime_pm_workqueue;
-#endif
-
 #ifdef CONFIG_PM_DEVFREQ
 	struct devfreq_dev_profile devfreq_profile;
 	struct devfreq *devfreq;
@@ -953,6 +955,12 @@ struct kbase_device {
 	struct kbase_trace_kbdev_timeline timeline;
 #endif
 
+	/*
+	 * Control for enabling job dump on failure, set when control debugfs
+	 * is opened.
+	 */
+	bool job_fault_debug;
+
 #ifdef CONFIG_DEBUG_FS
 	/* directory for debugfs entries */
 	struct dentry *mali_debugfs_directory;
@@ -960,13 +968,19 @@ struct kbase_device {
 	struct dentry *debugfs_ctx_directory;
 
 	/* failed job dump, used for separate debug process */
-	bool job_fault_debug;
 	wait_queue_head_t job_fault_wq;
 	wait_queue_head_t job_fault_resume_wq;
 	struct workqueue_struct *job_fault_resume_workq;
 	struct list_head job_fault_event_list;
 	struct kbase_context *kctx_fault;
 
+#if !MALI_CUSTOMER_RELEASE
+	/* Per-device data for register dumping interface */
+	struct {
+		u16 reg_offset; /* Offset of a GPU_CONTROL register to be
+				   dumped upon request */
+	} regs_dump_debugfs_data;
+#endif /* !MALI_CUSTOMER_RELEASE */
 #endif /* CONFIG_DEBUG_FS */
 
 	/* fbdump profiling controls set by gator */
@@ -1034,6 +1048,8 @@ struct kbase_device {
 	 */
 	struct bus_logger_client *buslogger;
 #endif
+	/* Boolean indicating if an IRQ flush during reset is in progress. */
+	bool irq_reset_flush;
 };
 
 /* JSCTX ringbuffer size must always be a power of 2 */
@@ -1080,14 +1096,16 @@ struct jsctx_rb {
 					 ((0 & 0xFF) << 0))
 
 struct kbase_context {
+	struct file *filp;
 	struct kbase_device *kbdev;
 	int id; /* System wide unique id */
 	unsigned long api_version;
 	phys_addr_t pgd;
 	struct list_head event_list;
 	struct mutex event_mutex;
-	bool event_closed;
+	atomic_t event_closed;
 	struct workqueue_struct *event_workq;
+	atomic_t event_count;
 
 	bool is_compat;
 
@@ -1148,8 +1166,10 @@ struct kbase_context {
 	char *mem_profile_data;
 	/* Size of @c mem_profile_data */
 	size_t mem_profile_size;
-	/* Spinlock guarding data */
-	spinlock_t mem_profile_lock;
+	/* Mutex guarding memory profile state */
+	struct mutex mem_profile_lock;
+	/* Memory profile file created */
+	bool mem_profile_initialized;
 	struct dentry *kctx_dentry;
 
 	/* for job fault debug */
@@ -1197,6 +1217,9 @@ struct kbase_context {
 	struct list_head completed_jobs;
 	/* Number of work items currently pending on job_done_wq */
 	atomic_t work_count;
+
+	/* true if context is counted in kbdev->js_data.nr_contexts_runnable */
+	bool ctx_runnable_ref;
 };
 
 enum kbase_reg_access_type {
@@ -1209,6 +1232,21 @@ enum kbase_share_attr_bits {
 	SHARE_BOTH_BITS = (2ULL << 8),	/* inner and outer shareable coherency */
 	SHARE_INNER_BITS = (3ULL << 8)	/* inner shareable coherency */
 };
+
+/**
+ * kbase_device_is_cpu_coherent - Returns if the device is CPU coherent.
+ * @kbdev: kbase device
+ *
+ * Return: true if the device access are coherent, false if not.
+ */
+static inline bool kbase_device_is_cpu_coherent(struct kbase_device *kbdev)
+{
+	if ((kbdev->system_coherency == COHERENCY_ACE_LITE) ||
+			(kbdev->system_coherency == COHERENCY_ACE))
+		return true;
+
+	return false;
+}
 
 /* Conversion helpers for setting up high resolution timers */
 #define HR_TIMER_DELAY_MSEC(x) (ns_to_ktime((x)*1000000U))
