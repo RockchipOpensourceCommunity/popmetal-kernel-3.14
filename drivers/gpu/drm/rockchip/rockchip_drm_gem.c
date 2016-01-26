@@ -66,6 +66,7 @@ int rockchip_gem_mmap_buf(struct drm_gem_object *obj,
 	unsigned long vm_size;
 
 	vma->vm_flags |= VM_IO | VM_DONTEXPAND | VM_DONTDUMP;
+	vma->vm_pgoff = 0;
 	vm_size = vma->vm_end - vma->vm_start;
 
 	if (vm_size > obj->size)

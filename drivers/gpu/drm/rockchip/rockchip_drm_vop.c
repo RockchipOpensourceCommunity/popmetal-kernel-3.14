@@ -1443,6 +1443,7 @@ static int vop_crtc_mode_set(struct drm_crtc *crtc,
 		return -EINVAL;
 	};
 	VOP_CTRL_SET(vop, out_mode, vop->connector_out_mode);
+	VOP_CTRL_SET(vop, dither_down, 0x6);
 
 	val = 0x8;
 	val |= (adjusted_mode->flags & DRM_MODE_FLAG_NHSYNC) ? 0 : 1;
@@ -1578,7 +1579,7 @@ static int vop_crtc_page_flip(struct drm_crtc *crtc,
 	/* when the page flip is requested, crtc should be on */
 	if (!vop->is_enabled) {
 		DRM_DEBUG("page flip request rejected because crtc is off.\n");
-		return 0;
+		return -EINVAL;
 	}
 
 	crtc->primary->fb = fb;
