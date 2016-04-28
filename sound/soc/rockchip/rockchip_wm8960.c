@@ -116,6 +116,22 @@ static int rockchip_wm8960_audio_hw_params(struct snd_pcm_substream *substream,
 	/* setting Class D switch clock, between 700KHz to 800KHz */
 	snd_soc_dai_set_clkdiv(codec_dai, WM8960_DCLKDIV, WM8960_DCLK_DIV_16);
 
+	/* caclu the LRCK sample rate div */
+	div = mclk / params_rate(params) / 256;
+	if (div == 6) {
+		div = 6;
+		/* setting SCLK to MCLK/6, divider from MCLK */
+		snd_soc_dai_set_clkdiv(cpu_dai, ROCKCHIP_DIV_MCLK, 4);
+	} else {
+		div = 4;
+		/* setting SCLK to MCLK/6, divider from MCLK */
+		snd_soc_dai_set_clkdiv(cpu_dai, ROCKCHIP_DIV_MCLK, 3);
+	}
+
+	/* setting LRCK to SCLK/xxx, divider from SCLK */
+	snd_soc_dai_set_clkdiv(cpu_dai, ROCKCHIP_DIV_BCLK,
+			       (mclk / div) / params_rate(params) - 1);
+
 	return 0;
 }
 

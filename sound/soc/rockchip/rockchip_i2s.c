@@ -311,6 +311,34 @@ static int rockchip_i2s_trigger(struct snd_pcm_substream *substream,
 	return ret;
 }
 
+static int rockchip_i2s_set_clkdiv(struct snd_soc_dai *cpu_dai,
+				   int div_id, int div)
+{
+	struct rk_i2s_dev *i2s = to_info(cpu_dai);
+	unsigned int val = 0;
+
+	dev_err(i2s->dev, "%s: div_id=%d, div=%d\n", __func__, div_id, div);
+
+	switch (div_id) {
+	case ROCKCHIP_DIV_BCLK:
+		val |= I2S_CKR_TSD(div);
+		val |= I2S_CKR_RSD(div);
+		regmap_update_bits(i2s->regmap, I2S_CKR,
+				   I2S_CKR_TSD_MASK | I2S_CKR_RSD_MASK,
+				   val);
+		break;
+	case ROCKCHIP_DIV_MCLK:
+		val |= I2S_CKR_MDIV(div);
+		regmap_update_bits(i2s->regmap, I2S_CKR,
+				   I2S_CKR_MDIV_MASK, val);
+		break;
+	default:
+		return -EINVAL;
+	}
+
+	return 0;
+}
+
 static int rockchip_i2s_set_sysclk(struct snd_soc_dai *cpu_dai, int clk_id,
 				   unsigned int freq, int dir)
 {
@@ -338,6 +366,7 @@ static int rockchip_i2s_dai_probe(struct snd_soc_dai *dai)
 
 static const struct snd_soc_dai_ops rockchip_i2s_dai_ops = {
 	.hw_params = rockchip_i2s_hw_params,
+	.set_clkdiv = rockchip_i2s_set_clkdiv,
 	.set_sysclk = rockchip_i2s_set_sysclk,
 	.set_fmt = rockchip_i2s_set_fmt,
 	.trigger = rockchip_i2s_trigger,

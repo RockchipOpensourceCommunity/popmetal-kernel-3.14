@@ -36,7 +36,7 @@ static int rockchip_hdmi_audio_hw_params(struct snd_pcm_substream *substream,
 	struct snd_soc_pcm_runtime *rtd = substream->private_data;
 	struct snd_soc_dai *cpu_dai = rtd->cpu_dai;
 	unsigned int dai_fmt = rtd->dai_link->dai_fmt;
-	int mclk, ret;
+	int mclk, ret, div;
 
 	switch (params_rate(params)) {
 	case 8000:
@@ -69,6 +69,22 @@ static int rockchip_hdmi_audio_hw_params(struct snd_pcm_substream *substream,
 		dev_err(cpu_dai->dev, "failed to set cpu_dai sysclk.\n");
 		return ret;
 	}
+
+	/* caclu the LRCK sample rate div */
+	div = mclk / params_rate(params) / 256;
+	if (div == 6) {
+		div = 6;
+		/* setting SCLK to MCLK/6, divider from MCLK */
+		snd_soc_dai_set_clkdiv(cpu_dai, ROCKCHIP_DIV_MCLK, 4);
+	} else {
+		div = 4;
+		/* setting SCLK to MCLK/6, divider from MCLK */
+		snd_soc_dai_set_clkdiv(cpu_dai, ROCKCHIP_DIV_MCLK, 3);
+	}
+
+	/* setting LRCK to SCLK/xxx, divider from SCLK */
+	snd_soc_dai_set_clkdiv(cpu_dai, ROCKCHIP_DIV_BCLK,
+			       (mclk / div) / params_rate(params) - 1);
 
 	return 0;
 }

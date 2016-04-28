@@ -89,13 +89,13 @@
 #define I2S_CKR_TLP_NORMAL	(0 << I2S_CKR_TLP_SHIFT)
 #define I2S_CKR_TLP_OPPSITE	(1 << I2S_CKR_TLP_SHIFT)
 #define I2S_CKR_MDIV_SHIFT	16
-#define I2S_CKR_MDIV(x)		((x - 1) << I2S_CKR_MDIV_SHIFT)
+#define I2S_CKR_MDIV(x)		((x) << I2S_CKR_MDIV_SHIFT)
 #define I2S_CKR_MDIV_MASK	(0xff << I2S_CKR_MDIV_SHIFT)
 #define I2S_CKR_RSD_SHIFT	8
-#define I2S_CKR_RSD(x)		((x - 1) << I2S_CKR_RSD_SHIFT)
+#define I2S_CKR_RSD(x)		((x) << I2S_CKR_RSD_SHIFT)
 #define I2S_CKR_RSD_MASK	(0xff << I2S_CKR_RSD_SHIFT)
 #define I2S_CKR_TSD_SHIFT	0
-#define I2S_CKR_TSD(x)		((x - 1) << I2S_CKR_TSD_SHIFT)
+#define I2S_CKR_TSD(x)		((x) << I2S_CKR_TSD_SHIFT)
 #define I2S_CKR_TSD_MASK	(0xff << I2S_CKR_TSD_SHIFT)
 
 /*
